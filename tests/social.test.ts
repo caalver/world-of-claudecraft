@@ -449,3 +449,65 @@ describe('the Hollow Crypt', () => {
     expect(sim.questState('q_hollow')).toBe('available');
   });
 });
+
+describe('the new dungeons', () => {
+  it('the Sunken Bastion and Gravewyrm Sanctum are enterable with full spawn sets', () => {
+    const sim = makeWorld();
+    const a = sim.addPlayer('warrior', 'Aleph');
+    teleport(sim, a, 45, 511);
+    sim.enterDungeon('sunken_bastion', a);
+    const ea = sim.entities.get(a)!;
+    expect(ea.pos.x).toBeGreaterThan(1400); // index-1 band
+    const slot = sim.instanceSlotAt(ea.pos)!;
+    const origin = instanceOrigin(1, slot);
+    const vael = nearestMob(sim, 'vael_the_mistcaller', origin);
+    expect(vael).toBeTruthy();
+    sim.leaveDungeon(a);
+    expect(dist2d(ea.pos, { x: 45, y: 0, z: 515 })).toBeLessThan(10);
+
+    teleport(sim, a, 0, 876);
+    sim.enterDungeon('gravewyrm_sanctum', a);
+    expect(ea.pos.x).toBeGreaterThan(2000); // index-2 band
+    const slot2 = sim.instanceSlotAt(ea.pos)!;
+    const origin2 = instanceOrigin(2, slot2);
+    const korzul = nearestMob(sim, 'korzul_the_gravewyrm', origin2);
+    expect(korzul).toBeTruthy();
+    expect(korzul.level).toBe(20);
+    sim.leaveDungeon(a);
+    expect(dist2d(ea.pos, { x: 0, y: 0, z: 880 })).toBeLessThan(10);
+  });
+
+  it('Velkhar summons add waves at hp thresholds and Korgath enrages below 30%', () => {
+    const sim = makeWorld();
+    const a = sim.addPlayer('warrior', 'Aleph');
+    teleport(sim, a, 0, 876);
+    sim.enterDungeon('gravewyrm_sanctum', a);
+    const ea = sim.entities.get(a)!;
+    const origin = instanceOrigin(2, sim.instanceSlotAt(ea.pos)!);
+
+    // Velkhar: drop below 66% then 33% -> two waves of 3 raised_bonewalker
+    const velkhar = nearestMob(sim, 'grand_necromancer_velkhar', origin);
+    expect(velkhar).toBeTruthy();
+    const addsNear = () => [...sim.entities.values()].filter(
+      (e) => e.kind === 'mob' && !e.dead && e.templateId === 'raised_bonewalker'
+        && Math.abs(e.pos.x - origin.x) < 120,
+    ).length;
+    expect(addsNear()).toBe(0);
+    velkhar.inCombat = true;
+    velkhar.hp = Math.floor(velkhar.maxHp * 0.6);
+    sim.tick();
+    expect(addsNear()).toBe(3);
+    velkhar.hp = Math.floor(velkhar.maxHp * 0.3);
+    sim.tick();
+    expect(addsNear()).toBe(6);
+
+    // Korgath: enrage flag flips once below 30% and boosts swing damage
+    const korgath = nearestMob(sim, 'korgath_the_bound', origin);
+    expect(korgath).toBeTruthy();
+    expect(korgath.enraged).toBe(false);
+    korgath.inCombat = true;
+    korgath.hp = Math.floor(korgath.maxHp * 0.25);
+    sim.tick();
+    expect(korgath.enraged).toBe(true);
+  });
+});
