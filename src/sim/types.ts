@@ -311,6 +311,15 @@ export interface ZoneDef {
   welcomeQuestId?: string; // only show the hint while this quest is available
 }
 
+/** One OBB in building-local space (footprint axes: +x east, +z north).
+ *  Used when the visual mesh overhangs and the ground underneath should stay walkable. */
+export interface BuildingColliderBlock {
+  lx: number;
+  lz: number;
+  hw: number;
+  hd: number;
+}
+
 export interface BuildingDef {
   kind: 'house' | 'inn' | 'chapel';
   x: number;
@@ -318,6 +327,25 @@ export interface BuildingDef {
   w: number;
   d: number;
   rot: number;
+  /** Optional collision blocks; when omitted the full w×d footprint blocks. */
+  colliders?: BuildingColliderBlock[];
+  /** Force a specific house prop model (houses only; default is random). */
+  prop?: 'house1' | 'house2' | 'blacksmith';
+  /** Walk-in interior layout id (see sim/building_layout.ts). */
+  interior?: string;
+}
+
+/** Free-placed prop from the asset library (public/models/props). */
+export interface PlacedAssetDef {
+  id: string;
+  /** Library id — see sim/prop_library.ts */
+  model: string;
+  x: number;
+  z: number;
+  rot: number;
+  scale: number;
+  /** OBB collision blocks in local space; auto-derived from model + scale when omitted. */
+  colliders?: BuildingColliderBlock[];
 }
 
 // Static prop placement per zone — the renderer builds meshes from these and
@@ -335,12 +363,14 @@ export interface ZonePropsDef {
   ruinRings: { x: number; z: number; ringR: number; columns: number }[];
   fences: { x1: number; z1: number; x2: number; z2: number }[];
   graveyards: { x: number; z: number }[]; // 6-headstone cluster anchor
+  placedAssets: PlacedAssetDef[];
 }
 
 export function emptyZoneProps(): ZonePropsDef {
   return {
     buildings: [], wells: [], stalls: [], mines: [], docks: [], tents: [],
     crates: [], campfires: [], mudHuts: [], ruinRings: [], fences: [], graveyards: [],
+    placedAssets: [],
   };
 }
 

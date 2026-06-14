@@ -76,6 +76,7 @@ function mergeProps(sets: ZonePropsDef[]): ZonePropsDef {
     ruinRings: sets.flatMap((s) => s.ruinRings),
     fences: sets.flatMap((s) => s.fences),
     graveyards: sets.flatMap((s) => s.graveyards),
+    placedAssets: sets.flatMap((s) => s.placedAssets ?? []),
   };
 }
 

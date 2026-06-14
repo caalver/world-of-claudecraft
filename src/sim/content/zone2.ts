@@ -763,4 +763,5 @@ export const ZONE2_PROPS: ZonePropsDef = {
     { x1: -18, z1: 313, x2: -22, z2: 300 },
   ],
   graveyards: [{ x: -18, z: 286 }],
+  placedAssets: [],
 };

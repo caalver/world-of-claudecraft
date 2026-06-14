@@ -18,6 +18,7 @@ import { togglePasswordVisibility, syncInputAriaState, validateForm, handleKeybo
 import { CLASSES, ABILITIES } from './sim/content/classes';
 import { iconDataUrl } from './ui/icons';
 import { getLanguage, setLanguage, t, SupportedLanguage } from './ui/i18n';
+import { createZoneEditor, type ZoneEditor } from './dev/zone_editor';
 
 
 const WORLD_SEED = 20061; // fixed: World of Claudecraft is a persistent place
@@ -353,8 +354,10 @@ async function startGame(world: IWorld, offlineSim: Sim | null, online: ClientWo
     if (chatInput.style.display === 'none') recoverFromMobileKeyboard();
   });
 
+  const zoneEditor: ZoneEditor | null = createZoneEditor(renderer, world, offlineSim);
+
   const input = new Input(canvas, {
-    onTab: () => world.tabTarget(),
+    onTab: () => { if (!zoneEditor?.active) world.tabTarget(); },
     // slot 0 (key 1) is Attack for every class — auto-attack without needing
     // right-click; keys and clicks share the Hud's remappable slot layout
     onAbility: (slot) => hud.castSlot(slot),
@@ -381,6 +384,8 @@ async function startGame(world: IWorld, offlineSim: Sim | null, online: ClientWo
     canUseGameKeys: () => !hud.isModalOpen() && chatInput.style.display !== 'block',
   }, keybinds);
   input.camYaw = world.player.facing;
+
+  zoneEditor?.attachCanvas(canvas);
 
   const mobileControls = new MobileControls(input, {
     onAttackNearest: () => attackNearest(),
@@ -473,6 +478,7 @@ async function startGame(world: IWorld, offlineSim: Sim | null, online: ClientWo
   }
 
   function handlePick(x: number, y: number, button: number): void {
+    if (zoneEditor?.active) return;
     const id = renderer.pick(x, y);
     const clickToMove = settings.get('clickToMove') > 0 && !world.player.dead;
     if (id === null) {
@@ -592,6 +598,7 @@ async function startGame(world: IWorld, offlineSim: Sim | null, online: ClientWo
     // character behind it (other windows stay non-modal, as before)
     input.suspendMovement = hud.isModalOpen();
     input.updateTouchLook(frameDt);
+    zoneEditor?.update(frameDt);
     updateHoverCursor();
 
     const mouselook = input.isMouselookActive() && !world.player.dead;

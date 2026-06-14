@@ -215,33 +215,33 @@ export const ZONE1_NPCS: Record<string, NpcDef> = {
   the_merchant: {
     id: 'the_merchant', name: 'The Merchant', title: 'Keeper of the World Market',
     // centerpiece of the square, just north of the well, facing the approach
-    pos: { x: 0, z: 9.5 }, facing: Math.PI, color: 0xd4af37,
+    pos: { x: 2.892, z: 10.408 }, facing: 4.702, color: 0xd4af37,
     questIds: [],
     market: true,
     greeting: 'Welcome to the World Market, $C. Buy from every adventurer in the realm — or set out your own wares and let coin find you.',
   },
   marshal_redbrook: {
     id: 'marshal_redbrook', name: 'Marshal Redbrook', title: 'Town Marshal',
-    pos: { x: 4, z: 6 }, facing: Math.PI, color: 0xb7950b,
+    pos: { x: 1.629, z: 2.55 }, facing: 3.142, color: 0xb7950b,
     questIds: ['q_wolves', 'q_greyjaw', 'q_bandits', 'q_ringleader', 'q_mogger_tracks', 'q_mogger'],
     greeting: 'Keep your blade close, $C. The Vale is not what it was.',
   },
   trader_wilkes: {
     id: 'trader_wilkes', name: 'Trader Wilkes', title: 'Provisioner',
-    pos: { x: -7, z: 3 }, facing: Math.PI / 2, color: 0x1e8449,
+    pos: { x: -7, z: 3 }, facing: 1.571, color: 0x1e8449,
     questIds: ['q_boars', 'q_supplies'],
     vendorItems: ['baked_bread', 'spring_water', 'roasted_boar', 'tough_jerky', 'minor_healing_potion', 'minor_mana_potion'],
     greeting: 'Fresh bread, clean water, fair prices. What can I get you?',
   },
   apothecary_lin: {
     id: 'apothecary_lin', name: 'Apothecary Lin', title: 'Herbalist',
-    pos: { x: 11, z: -3 }, facing: -Math.PI / 2, color: 0x7d3c98,
+    pos: { x: 11.639, z: -2.865 }, facing: -1.571, color: 0x7d3c98,
     questIds: ['q_spiders'],
     greeting: 'Careful where you step in the eastern woods, friend.',
   },
   brother_aldric: {
     id: 'brother_aldric', name: 'Brother Aldric', title: 'Priest of the Vale',
-    pos: { x: -14, z: -10 }, facing: 0.8, color: 0xf7f9f9,
+    pos: { x: -8.763, z: -6.511 }, facing: 1.4, color: 0xf7f9f9,
     questIds: [
       'q_bones', 'q_whispers', 'q_names_of_the_dead', 'q_silence_the_call',
       'q_rite', 'q_sexton', 'q_hollow', 'q_gravecallers_trail', 'q_fenbridge_muster',
@@ -250,7 +250,7 @@ export const ZONE1_NPCS: Record<string, NpcDef> = {
   },
   smith_haldren: {
     id: 'smith_haldren', name: 'Smith Haldren', title: 'Armorer & Weaponsmith',
-    pos: { x: 7, z: 16.5 }, facing: -2.7, color: 0x707b7c,
+    pos: { x: 9.533, z: 17.15 }, facing: -7.02, color: 0x707b7c,
     questIds: [],
     vendorItems: [
       'eastbrook_arming_sword', 'bronzework_mace', 'vale_carving_knife', 'hickory_shortstaff',
@@ -273,7 +273,7 @@ export const ZONE1_NPCS: Record<string, NpcDef> = {
     id: 'foreman_odell', name: 'Foreman Odell', title: 'Mine Foreman',
     // in town (south edge, scowling toward his overrun dig) — his old spot
     // sat inside the Tunnel Rat spawn radius
-    pos: { x: -4, z: -14 }, facing: -2.14, color: 0xa04000,
+    pos: { x: 2.813, z: -13.352 }, facing: -2.14, color: 0xa04000,
     questIds: ['q_mine'],
     greeting: "Whole dig's crawling with those candle-headed vermin!",
   },
@@ -486,31 +486,25 @@ export const ZONE1_QUEST_ORDER = [
 // rendered world and the corrected map both put -x on your right).
 // ---------------------------------------------------------------------------
 
+// @zone-editor-begin ZONE1_CAMPS
 export const ZONE1_CAMPS: CampDef[] = [
-  // Wolves: north woods
   { mobId: 'forest_wolf', center: { x: -15, z: 55 }, radius: 22, count: 7 },
   { mobId: 'forest_wolf', center: { x: 20, z: 70 }, radius: 20, count: 6 },
   { mobId: 'old_greyjaw', center: { x: 0, z: 95 }, radius: 8, count: 1 },
-  // Boars: east meadow
   { mobId: 'wild_boar', center: { x: 55, z: 12 }, radius: 22, count: 6 },
   { mobId: 'wild_boar', center: { x: 80, z: -15 }, radius: 18, count: 5 },
   { mobId: 'elder_bristleback', center: { x: 104, z: 24 }, radius: 4, count: 1 },
   { mobId: 'mogger', center: { x: 118, z: -26 }, radius: 5, count: 1 },
-  // Spiders: western woods
   { mobId: 'webwood_spider', center: { x: -60, z: 5 }, radius: 22, count: 7 },
   { mobId: 'sableweb_matriarch', center: { x: -72, z: 28 }, radius: 5, count: 1 },
-  // Murlocs: lake shore northwest — camp straddles the waterline
   { mobId: 'mudfin_murloc', center: { x: -75, z: 57 }, radius: 14, count: 8 },
-  // Kobolds: mine southwest
   { mobId: 'tunnel_rat', center: { x: -82, z: -62 }, radius: 20, count: 9 },
-  // Bandits: southeast camp
   { mobId: 'vale_bandit', center: { x: 65, z: -65 }, radius: 24, count: 7 },
   { mobId: 'vale_bandit', center: { x: 90, z: -90 }, radius: 16, count: 5 },
   { mobId: 'gorrak', center: { x: 92, z: -92 }, radius: 2, count: 1 },
-  // Undead: ruins northeast
   { mobId: 'restless_bones', center: { x: 80, z: 78 }, radius: 18, count: 8 },
 ];
-
+// @zone-editor-end ZONE1_CAMPS
 
 export const ZONE1_OBJECTS: GroundObjectDef[] = [
   {
@@ -553,18 +547,19 @@ export const ZONE1_ROADS: { x: number; z: number }[][] = [
 // Static props (rendering + collision share this placement data)
 // ---------------------------------------------------------------------------
 
+// @zone-editor-begin ZONE1_PROPS
 export const ZONE1_PROPS: ZonePropsDef = {
   buildings: [
-    { kind: 'house', x: 10, z: 12, w: 7, d: 6, rot: -0.4 },
-    { kind: 'house', x: -10, z: 10, w: 6, d: 5, rot: 0.5 },
-    { kind: 'inn', x: 12, z: -6, w: 6, d: 7, rot: 2.4 },
-    { kind: 'chapel', x: -16, z: -8, w: 5, d: 7, rot: 0.9 },
+    { kind: 'house', prop: 'house2', x: 11.441, z: 8.923, w: 14, d: 12, rot: -0.4 },
+    { kind: 'house', prop: 'house2', x: -10, z: 10, w: 12, d: 10, rot: 0.5 },
+    { kind: 'inn', x: 11.44, z: -10.482, w: 12, d: 14, rot: 2.4 },
+    { kind: 'chapel', x: -18.185, z: -4.753, w: 12.5, d: 14, rot: 1.38 },
   ],
-  wells: [{ x: 0, z: 2, r: 1.5 }],
+  wells: [{ x: -1.498, z: 1.274, r: 1.5 }],
   stalls: [
-    { x: -8.5, z: 3, rot: Math.PI / 2, r: 1.7 },
-    { x: 9.5, z: 17.5, rot: -2.7, r: 1.7 }, // Smith Haldren's smithy stall
-    { x: 0, z: 11.5, rot: Math.PI, r: 1.8 }, // The Merchant's World Market stall
+    { x: -9.902, z: 1.487, rot: 1.931, r: 1.7 },
+    { x: 7.846, z: 14.713, rot: -3.6, r: 1.7 },
+    { x: 4.343, z: 7.512, rot: 4.342, r: 1.8 },
   ],
   mines: [{ x: -88, z: -68, rot: 0.8 }],
   docks: [{ x: -64, z: 60, rot: -2.2, hutLocal: { x: 2.8, z: 2.4, hw: 1.7, hd: 1.5 } }],
@@ -582,5 +577,8 @@ export const ZONE1_PROPS: ZonePropsDef = {
     { x1: 16, z1: 16, x2: 22, z2: 4 },
     { x1: -16, z1: 14, x2: -20, z2: 2 },
   ],
-  graveyards: [{ x: -14, z: -14 }],
+  graveyards: [{ x: -14.083, z: -14.111 }],
+  placedAssets: [
+  ],
 };
+// @zone-editor-end ZONE1_PROPS

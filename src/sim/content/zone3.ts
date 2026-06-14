@@ -834,4 +834,5 @@ export const ZONE3_PROPS: ZonePropsDef = {
     { x1: 4, z1: 647, x2: 14, z2: 649 },             // south gate, west run
   ],
   graveyards: [{ x: 15, z: 645 }],
+  placedAssets: [],
 };

@@ -2,6 +2,8 @@ import { generateDecorations } from './world';
 import {
   DUNGEON_X_THRESHOLD, INSTANCE_SLOT_COUNT, PROPS, arenaOriginAt, dungeonAt, instanceOrigin, isArenaPos,
 } from './data';
+import { buildingWallBlocks, isEnterableBuilding, resolveBuildingDoors } from './building_layout';
+import { placedAssetColliders } from './prop_library';
 import { ARENA_LAYOUT, CRYPT_LAYOUT, SANCTUM_LAYOUT, layoutColliders } from './dungeon_layout';
 
 // Static world collision. Prop placement comes from the per-zone content
@@ -41,7 +43,26 @@ function staticWorldColliders(seed: number): Collider[] {
   const out: Collider[] = [];
 
   for (const b of PROPS.buildings) {
-    out.push({ type: 'obb', x: b.x, z: b.z, hw: b.w / 2, hd: b.d / 2, rot: b.rot });
+    if (isEnterableBuilding(b)) {
+      const blocks = buildingWallBlocks(b.w / 2, b.d / 2, resolveBuildingDoors(b));
+      for (const block of blocks) {
+        const off = rotY(block.lx, block.lz, b.rot);
+        out.push({
+          type: 'obb', x: b.x + off.x, z: b.z + off.z,
+          hw: block.hw, hd: block.hd, rot: b.rot,
+        });
+      }
+    } else if (b.colliders?.length) {
+      for (const block of b.colliders) {
+        const off = rotY(block.lx, block.lz, b.rot);
+        out.push({
+          type: 'obb', x: b.x + off.x, z: b.z + off.z,
+          hw: block.hw, hd: block.hd, rot: b.rot,
+        });
+      }
+    } else {
+      out.push({ type: 'obb', x: b.x, z: b.z, hw: b.w / 2, hd: b.d / 2, rot: b.rot });
+    }
   }
   for (const w of PROPS.wells) out.push({ type: 'circle', x: w.x, z: w.z, r: w.r });
   for (const s of PROPS.stalls) out.push({ type: 'circle', x: s.x, z: s.z, r: s.r });
@@ -58,6 +79,7 @@ function staticWorldColliders(seed: number): Collider[] {
     out.push({ type: 'obb', x: d.x + hut.x, z: d.z + hut.z, hw: d.hutLocal.hw, hd: d.hutLocal.hd, rot: d.rot });
   }
 
+  for (const asset of PROPS.placedAssets ?? []) out.push(...placedAssetColliders(asset));
   for (const t of PROPS.tents) out.push({ type: 'circle', x: t.x, z: t.z, r: 1.5 * t.scale });
   for (const [x, z] of PROPS.crates) out.push({ type: 'circle', x, z, r: 0.65 });
   for (const [x, z] of PROPS.campfires) out.push({ type: 'circle', x, z, r: 0.85 });

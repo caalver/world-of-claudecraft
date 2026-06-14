@@ -62,6 +62,11 @@ const IBL_RAW_SCALE = 0.55;
 const DUNGEON_HEMI_INTENSITY = 0.22; // floor of readability — bosses crushed to black at 0.14
 // character rim glow scales up underground so silhouettes split from the murk
 const DUNGEON_RIM_BOOST = 2.4;
+// enterable overworld buildings: dim daylight, hearth lights carry the room
+const BUILDING_SUN_INTENSITY = 0.72;
+const BUILDING_HEMI_INTENSITY = 0.48;
+const BUILDING_ENV_INTENSITY = 0.32;
+const BUILDING_RIM_BOOST = 1.35;
 
 interface EntityView {
   group: THREE.Group;
@@ -133,7 +138,12 @@ export class Renderer {
   private fogScratch = new THREE.Color();
   private flames: THREE.Mesh[];
   private fireLights: THREE.PointLight[];
-  private propsView!: { update(camX: number, camZ: number, fogFar: number): void };
+  private propsView!: {
+    update(camX: number, camZ: number, fogFar: number): void;
+    updatePlayer?(px: number, pz: number): boolean;
+  };
+  private insideBuilding = false;
+  private worldPropsGroup!: THREE.Group;
   private lightRank: { light: THREE.PointLight; d2: number; worldPos: THREE.Vector3 }[] = [];
   private doomedIds: number[] = [];
   private dungeons: DungeonInteriors | null = null;
@@ -156,6 +166,7 @@ export class Renderer {
     // requesting it here would hit software GL (the autodetect can only run
     // after the context exists) with the most expensive setting there is.
     this.webgl = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+    this.webgl.localClippingEnabled = true;
     initGfxTier(this.webgl); // software-GL autodetect needs the live context
     this.lowGfx = GFX.tier === 'low';
     const LOW_GFX = this.lowGfx;
@@ -309,6 +320,7 @@ export class Renderer {
     this.foliage = buildFoliage(this.sim.cfg.seed);
     this.scene.add(this.foliage.group);
     const props = buildProps(this.sim.cfg.seed);
+    this.worldPropsGroup = props.group;
     this.scene.add(props.group);
     this.flames = props.flames;
     this.fireLights = props.fireLights;
@@ -349,6 +361,11 @@ export class Renderer {
     window.visualViewport?.addEventListener('resize', resize);
     window.visualViewport?.addEventListener('scroll', resize);
     document.addEventListener('fullscreenchange', resize);
+  }
+
+  /** Dev zone editor: hide baked world props while showing an editor preview layer. */
+  setWorldPropsVisible(visible: boolean): void {
+    if (this.worldPropsGroup) this.worldPropsGroup.visible = visible;
   }
 
   private measureViewport(): { width: number; height: number } {
@@ -617,7 +634,7 @@ export class Renderer {
   // ---------------------------------------------------------------------
 
   private builtInteriors = new Set<string>();
-  private fogState: 'outdoor' | 'dungeon' | 'underwater' = 'outdoor';
+  private fogState: 'outdoor' | 'building' | 'dungeon' | 'underwater' = 'outdoor';
 
   private buildInterior(interior: string, ox: number, oz: number): void {
     this.dungeons ??= new DungeonInteriors(this.scene, this.lowGfx, this.flames, this.fireLights);
@@ -665,7 +682,9 @@ export class Renderer {
         }
       }
     }
-    const desired = inside ? 'dungeon' : camY < WATER_LEVEL - 0.05 ? 'underwater' : 'outdoor';
+    const desired = inside ? 'dungeon'
+      : this.insideBuilding ? 'building'
+        : camY < WATER_LEVEL - 0.05 ? 'underwater' : 'outdoor';
     const fog = this.scene.fog as THREE.Fog;
     if (desired !== this.fogState) {
       this.fogState = desired;
@@ -673,6 +692,10 @@ export class Renderer {
         fog.color.setHex(0x05060a);
         fog.near = 18;
         fog.far = 90;
+      } else if (desired === 'building') {
+        fog.color.setHex(0x4a3d32);
+        fog.near = 28;
+        fog.far = 118;
       } else if (desired === 'underwater') {
         fog.color.setHex(0x17506e);
         fog.near = 2;
@@ -688,10 +711,14 @@ export class Renderer {
       // The rim glow cranks up instead — silhouettes must split from the murk.
       if (!this.lowGfx) {
         const underground = desired === 'dungeon';
-        this.sun.intensity = underground ? DUNGEON_SUN_INTENSITY : SUN_INTENSITY;
-        this.hemi.intensity = underground ? DUNGEON_HEMI_INTENSITY : HEMI_INTENSITY;
-        this.scene.environmentIntensity = underground ? DUNGEON_ENV_INTENSITY : this.envOutdoorIntensity;
-        sharedUniforms.uRimBoost.value = underground ? DUNGEON_RIM_BOOST : 1;
+        const sheltered = underground || desired === 'building';
+        this.sun.intensity = underground ? DUNGEON_SUN_INTENSITY
+          : desired === 'building' ? BUILDING_SUN_INTENSITY : SUN_INTENSITY;
+        this.hemi.intensity = underground ? DUNGEON_HEMI_INTENSITY
+          : desired === 'building' ? BUILDING_HEMI_INTENSITY : HEMI_INTENSITY;
+        this.scene.environmentIntensity = underground ? DUNGEON_ENV_INTENSITY
+          : desired === 'building' ? BUILDING_ENV_INTENSITY : this.envOutdoorIntensity;
+        sharedUniforms.uRimBoost.value = sheltered ? (underground ? DUNGEON_RIM_BOOST : BUILDING_RIM_BOOST) : 1;
       }
       return;
     }
@@ -929,6 +956,7 @@ export class Renderer {
     }
     for (let i = 0; i < this.fireLights.length; i++) {
       const light = this.fireLights[i];
+      if (light.userData.buildingInterior) continue;
       const base = (light.userData.baseIntensity as number | undefined) ?? 11;
       light.intensity = base + Math.sin(this.time * 11 + i * 1.7) * 2.5 * (base / 11);
     }
@@ -954,6 +982,7 @@ export class Renderer {
     // fully-fogged terrain chunks / tree buckets are dropped before the
     // frustum; the grass ring follows the player
     const fogFar = (this.scene.fog as THREE.Fog).far;
+    this.insideBuilding = this.propsView.updatePlayer?.(p.pos.x, p.pos.z) ?? false;
     this.terrainView.update(this.camera.position.x, this.camera.position.z, fogFar);
     this.propsView.update(this.camera.position.x, this.camera.position.z, fogFar);
     this.foliage.update(p.pos.x, p.pos.z, this.camera.position.x, this.camera.position.z, fogFar);

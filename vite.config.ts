@@ -1,8 +1,10 @@
 import { defineConfig } from 'vite';
 import { fileURLToPath } from 'node:url';
+import { zoneEditorDevPlugin } from './scripts/vite_zone_editor_plugin.mjs';
 
 export default defineConfig({
   base: '/',
+  plugins: [zoneEditorDevPlugin()],
   server: {
     port: 5173,
     proxy: {

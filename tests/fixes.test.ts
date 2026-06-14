@@ -125,11 +125,26 @@ describe('collision & terrain', () => {
   });
 
   it('resolvePosition pushes points out of colliders', () => {
-    const inside = resolvePosition(SEED, 10, 12, 0.5); // house centre
-    expect(Math.abs(inside.x - 10) + Math.abs(inside.z - 12)).toBeGreaterThan(0.5);
+    const inside = resolvePosition(SEED, -1.498, 1.274, 0.5); // well centre
+    expect(Math.abs(inside.x - -1.498) + Math.abs(inside.z - 1.274)).toBeGreaterThan(0.5);
     const open = resolvePosition(SEED, 0, -40, 0.5); // open road
     expect(open.x).toBe(0);
     expect(open.z).toBe(-40);
+  });
+
+  it('house_2 door-side overhang is walkable underneath', () => {
+    // house at (-10,10) rot 0.5: door/overhang on east (+x local). lx=+5 sits
+    // past the recessed body collider (body ends at local x≈+3 for w=12).
+    const rot = 0.5;
+    const lx = 5;
+    const lz = 0;
+    const c = Math.cos(rot);
+    const s = Math.sin(rot);
+    const x = -10 + lx * c + lz * s;
+    const z = 10 + -lx * s + lz * c;
+    expect(isBlocked(SEED, x, z, 0.5)).toBe(false);
+    // enterable interior: building centre is walkable
+    expect(isBlocked(SEED, -10, 10, 0.5)).toBe(false);
   });
 });
 

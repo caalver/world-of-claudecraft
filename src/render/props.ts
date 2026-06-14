@@ -3,6 +3,10 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import type { GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { terrainHeight, WATER_LEVEL } from '../sim/world';
 import { PROPS, WORLD_MIN_Z } from '../sim/data';
+import type { ZonePropsDef } from '../sim/types';
+import { getPropLibraryEntry, placedAssetRenderScale } from '../sim/prop_library';
+import { isEnterableBuilding } from '../sim/building_layout';
+import { buildEnterableBuilding, updateEnterableBuildings, type EnterableBuildingView } from './building_interiors';
 import { hash2 } from '../sim/rng';
 import { GFX, surfaceMat } from './gfx';
 import { loadGltf } from './assets/loader';
@@ -31,6 +35,8 @@ export interface PropsResult {
   fireLights: THREE.PointLight[];
   /** hides merged/instanced prop bands that sit entirely past the fog far plane */
   update(camX: number, camZ: number, fogFar: number): void;
+  /** clip enterable roofs + toggle interiors; returns true when inside any */
+  updatePlayer?(px: number, pz: number): boolean;
 }
 
 const MERGE_BAND_DEPTH = 180;
@@ -258,7 +264,61 @@ function setScale(o: THREE.Object3D, s: Scale): void {
   else o.scale.set(s[0], s[1], s[2]);
 }
 
-export function buildProps(seed: number): PropsResult {
+/** Lightweight prop mesh for the zone editor (shares cached geometry/materials). */
+export function createPropPreviewMesh(key: PropKey, scale: Scale): THREE.Group {
+  const a = propAsset(key);
+  const holder = new THREE.Group();
+  for (const p of a.parts) {
+    const mesh = new THREE.Mesh(p.geo, p.mat);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    holder.add(mesh);
+  }
+  setScale(holder, scale);
+  const root = new THREE.Group();
+  root.add(holder);
+  return root;
+}
+
+/** Placed library asset preview mesh scaled to match collision/render rules. */
+export function createPlacedAssetPreviewMesh(model: string, scale: number): THREE.Group | null {
+  const entry = getPropLibraryEntry(model);
+  if (!entry) return null;
+  const key = entry.propKey as PropKey;
+  const a = propAsset(key);
+  return createPropPreviewMesh(key, placedAssetRenderScale(entry, scale, a.size));
+}
+
+const HOUSE_PREVIEW_HEIGHT: Record<string, number> = {
+  house1: 8.0, house2: 15.2, blacksmith: 6.6, inn: 15.2,
+};
+
+/** Building preview mesh from editor footprint (houses / inn / chapel). */
+export function createBuildingPreviewMesh(b: import('../sim/types').BuildingDef): THREE.Group {
+  if (b.kind === 'chapel') {
+    const g = new THREE.Group();
+    const tower = propAsset('bellTower');
+    const hall = propAsset('house3');
+    const towerHolder = new THREE.Group();
+    for (const p of tower.parts) towerHolder.add(new THREE.Mesh(p.geo, p.mat));
+    towerHolder.position.set(0, 0, -1.5);
+    setScale(towerHolder, [(b.w * 0.98) / tower.size.x, 21.2 / tower.size.y, (b.d * 0.72) / tower.size.z]);
+    g.add(towerHolder);
+    const hallHolder = new THREE.Group();
+    for (const p of hall.parts) hallHolder.add(new THREE.Mesh(p.geo, p.mat));
+    hallHolder.position.set(0, 0, b.d / 2 - 3.24);
+    setScale(hallHolder, [(b.w * 0.9) / hall.size.x, 5.0 / hall.size.y, 6.4 / hall.size.z]);
+    g.add(hallHolder);
+    return g;
+  }
+  const housePool: PropKey[] = ['house1', 'house2', 'blacksmith'];
+  const asset: PropKey = b.kind === 'inn' ? 'inn' : b.prop ?? housePool[0];
+  const a = propAsset(asset);
+  const h = HOUSE_PREVIEW_HEIGHT[asset] ?? a.size.y;
+  return createPropPreviewMesh(asset, [b.w / a.size.x, h / a.size.y, b.d / a.size.z]);
+}
+
+export function buildProps(seed: number, propsDef: ZonePropsDef = PROPS): PropsResult {
   const group = new THREE.Group();
   const flames: THREE.Mesh[] = [];
   const fireLights: THREE.PointLight[] = [];
@@ -322,31 +382,30 @@ export function buildProps(seed: number): PropsResult {
 
   // ---- buildings: village houses / inn / composed chapel ------------------
   const housePool: PropKey[] = ['house1', 'house2', 'blacksmith'];
-  const houseHeight: Record<string, number> = { house1: 8.0, house2: 7.6, blacksmith: 6.6, inn: 7.6 };
+  const houseHeight: Record<string, number> = { house1: 8.0, house2: 15.2, blacksmith: 6.6, inn: 15.2 };
+  const enterableViews: EnterableBuildingView[] = [];
+  const skipMerge = new Set<THREE.Object3D>();
 
-  for (const b of PROPS.buildings) {
+  for (const b of propsDef.buildings) {
     const key = b.x * 13.7 + b.z * 3.1;
     const y = ground(b.x, b.z);
-    if (b.kind === 'chapel') {
-      // composed chapel: tall bell tower at the rear + squat stone entry hall
-      // in front; the hall door lands on the footprint's +z edge.
-      const g = new THREE.Group();
-      const tower = propAsset('bellTower');
-      addParts(g, 'bellTower', {
-        z: -0.75,
-        scale: [(b.w * 0.98) / tower.size.x, 10.6 / tower.size.y, (b.d * 0.72) / tower.size.z],
+    if (isEnterableBuilding(b)) {
+      const view = buildEnterableBuilding(b, {
+        addParts: (parent, assetKey, opts) => addParts(parent, assetKey as PropKey, opts),
+        assetSize: (assetKey) => propAsset(assetKey as PropKey).size,
+        houseHeight: (assetKey) => houseHeight[assetKey] ?? 8,
       });
-      const hall = propAsset('house3');
-      addParts(g, 'house3', {
-        z: b.d / 2 - 1.62,
-        scale: [(b.w * 0.9) / hall.size.x, 2.5 / hall.size.y, 3.2 / hall.size.z],
-      });
-      g.position.set(b.x, y - 0.12, b.z);
-      g.rotation.y = b.rot;
-      group.add(shadowed(g));
+      enterableViews.push(view);
+      view.root.position.set(b.x, y - 0.12, b.z);
+      view.root.rotation.y = b.rot;
+      group.add(shadowed(view.root));
+      skipMerge.add(view.root);
+      view.root.traverse((c) => { if ((c as THREE.Mesh).isMesh) skipMerge.add(c); });
+      if (view.fireLight) fireLights.push(view.fireLight);
       continue;
     }
-    const asset: PropKey = b.kind === 'inn' ? 'inn' : housePool[Math.floor(keyRand(key, 3) * 0.999 * housePool.length)];
+    const asset: PropKey = b.kind === 'inn' ? 'inn'
+      : b.prop ?? housePool[Math.floor(keyRand(key, 3) * 0.999 * housePool.length)];
     const a = propAsset(asset);
     const g = new THREE.Group();
     addParts(g, asset, { scale: [b.w / a.size.x, houseHeight[asset] / a.size.y, b.d / a.size.z] });
@@ -355,8 +414,21 @@ export function buildProps(seed: number): PropsResult {
     group.add(shadowed(g));
   }
 
+  // ---- library placed assets (zone editor / merged exports) ----------------
+  for (const asset of propsDef.placedAssets ?? []) {
+    const entry = getPropLibraryEntry(asset.model);
+    if (!entry) continue;
+    const key = entry.propKey as PropKey;
+    const a = propAsset(key);
+    const g = new THREE.Group();
+    addParts(g, key, { scale: placedAssetRenderScale(entry, asset.scale, a.size) });
+    g.position.set(asset.x, ground(asset.x, asset.z) - 0.06, asset.z);
+    g.rotation.y = asset.rot;
+    group.add(shadowed(g));
+  }
+
   // ---- market stalls (smith/armorer stalls get anvil + weapon stand) ------
-  PROPS.stalls.forEach((s, i) => {
+  propsDef.stalls.forEach((s, i) => {
     const key = s.x * 7.7 + s.z * 2.3;
     const g = new THREE.Group();
     const standKey: PropKey = i % 2 === 0 ? 'stand1' : 'stand2';
@@ -379,7 +451,7 @@ export function buildProps(seed: number): PropsResult {
   });
 
   // ---- wells ---------------------------------------------------------------
-  for (const w of PROPS.wells) {
+  for (const w of propsDef.wells) {
     const g = new THREE.Group();
     const a = propAsset('well');
     addParts(g, 'well', { scale: [2.6 / a.size.x, 3.6 / a.size.y, 2.9 / a.size.z] });
@@ -390,7 +462,7 @@ export function buildProps(seed: number): PropsResult {
 
   // ---- graveyards: 4 headstone shapes, leaning, instanced ------------------
   const graveKinds: PropKey[] = ['graveRound', 'graveCross', 'graveBevel', 'graveDecor'];
-  for (const gy of PROPS.graveyards) {
+  for (const gy of propsDef.graveyards) {
     for (let i = 0; i < 6; i++) {
       const gx = gy.x + (i % 3) * 2.2, gz = gy.z + Math.floor(i / 3) * 2.6;
       const s = 2.0 + keyRand(gx * 3 + gz, 4) * 0.5;
@@ -403,7 +475,7 @@ export function buildProps(seed: number): PropsResult {
   }
 
   // ---- town fences: village fence module repeated along the run ------------
-  for (const f of PROPS.fences) {
+  for (const f of propsDef.fences) {
     const len = Math.hypot(f.x2 - f.x1, f.z2 - f.z1);
     const n = Math.max(1, Math.round(len / 2.35));
     const dirx = (f.x2 - f.x1) / len, dirz = (f.z2 - f.z1) / len;
@@ -424,7 +496,7 @@ export function buildProps(seed: number): PropsResult {
   const flamePts = [[0, 0], [0.16, 0.1], [0.27, 0.28], [0.3, 0.45], [0.22, 0.66], [0.1, 0.84], [0.001, 0.95]]
     .map(([r, y]) => new THREE.Vector2(r, y));
   const flameGeo = new THREE.LatheGeometry(flamePts, 7);
-  for (const [x, z] of PROPS.campfires) {
+  for (const [x, z] of propsDef.campfires) {
     const y = ground(x, z);
     addInstance('bonfire', x, y - 0.05, z, propRand(x, z, 1) * Math.PI * 2, 4.3);
     const g = new THREE.Group();
@@ -446,7 +518,7 @@ export function buildProps(seed: number): PropsResult {
   }
 
   // ---- bandit/war tents: Kenney ridge tents, opening on +z, instanced ------
-  for (const t of PROPS.tents) {
+  for (const t of propsDef.tents) {
     const kind: PropKey = propRand(t.x, t.z, 2) < 0.55 ? 'tentOpen' : 'tentSmall';
     const a = propAsset(kind);
     const s = (3.0 * t.scale) / Math.max(a.size.x, a.size.z);
@@ -456,7 +528,7 @@ export function buildProps(seed: number): PropsResult {
   }
 
   // ---- crates: camp clutter (wooden crate / barrel mix), instanced ---------
-  PROPS.crates.forEach(([x, z], i) => {
+  propsDef.crates.forEach(([x, z], i) => {
     const kind: PropKey = i % 3 === 2 ? 'barrel' : 'crateWooden';
     const s = kind === 'barrel' ? 1.25 : 1.3 + propRand(x, z, 5) * 0.15;
     addInstance(kind, x, ground(x, z) - 0.04, z, new THREE.Euler(
@@ -465,11 +537,11 @@ export function buildProps(seed: number): PropsResult {
   });
 
   // ---- murloc mud huts: giant swamp mushrooms, doorway facing camp center --
-  const hutCenter = PROPS.mudHuts.reduce(
-    (acc, [hx, hz]) => ({ x: acc.x + hx / PROPS.mudHuts.length, z: acc.z + hz / PROPS.mudHuts.length }),
+  const hutCenter = propsDef.mudHuts.reduce(
+    (acc, [hx, hz]) => ({ x: acc.x + hx / propsDef.mudHuts.length, z: acc.z + hz / propsDef.mudHuts.length }),
     { x: 0, z: 0 },
   );
-  for (const [x, z] of PROPS.mudHuts) {
+  for (const [x, z] of propsDef.mudHuts) {
     const y = ground(x, z);
     const sxz = 13 + propRand(x, z, 15) * 3;
     const sy = 10.5 + propRand(x, z, 16) * 3;
@@ -491,7 +563,7 @@ export function buildProps(seed: number): PropsResult {
   }
 
   // ---- ruin rings: weathered monolith columns at the exact collider angles -
-  for (const r of PROPS.ruinRings) {
+  for (const r of propsDef.ruinRings) {
     for (let i = 0; i < r.columns; i++) {
       const ang = (i / r.columns) * Math.PI * 2;
       const x = r.x + Math.sin(ang) * r.ringR, z = r.z + Math.cos(ang) * r.ringR;
@@ -522,7 +594,7 @@ export function buildProps(seed: number): PropsResult {
   }
 
   // ---- mine entrances: timber portal, rock mound, ore cart, lantern --------
-  for (const m of PROPS.mines) {
+  for (const m of propsDef.mines) {
     const g = new THREE.Group();
     for (const sx of [-1.45, 1.45]) {
       addParts(g, 'timberPillar', { x: sx, scale: [3.4, 3.5, 3.4] });
@@ -572,7 +644,7 @@ export function buildProps(seed: number): PropsResult {
   }
 
   // ---- fishing docks: pirate-kit platforms, moored rowboat, stone hut ------
-  for (const d of PROPS.docks) {
+  for (const d of propsDef.docks) {
     const y = ground(d.x, d.z);
     const g = new THREE.Group();
     const key = d.x * 3.3 + d.z * 1.7;
@@ -631,7 +703,7 @@ export function buildProps(seed: number): PropsResult {
     }
   }
 
-  const staticMeshes = mergeStaticMeshes(group, new Set(flames));
+  const staticMeshes = mergeStaticMeshes(group, new Set([...flames, ...skipMerge]));
   for (const sm of staticMeshes) {
     const sphere = sm.geometry.boundingSphere;
     if (sphere) cullables.push({ obj: sm, cx: sphere.center.x, cz: sphere.center.z, r: sphere.radius });
@@ -645,6 +717,9 @@ export function buildProps(seed: number): PropsResult {
       for (const c of cullables) {
         c.obj.visible = Math.hypot(c.cx - camX, c.cz - camZ) - c.r < fogFar;
       }
+    },
+    updatePlayer(px: number, pz: number): boolean {
+      return enterableViews.length ? updateEnterableBuildings(enterableViews, px, pz) : false;
     },
   };
 }
