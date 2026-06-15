@@ -735,10 +735,10 @@ export const ZONE2_ITEMS: Record<string, ItemDef> = {
 
 export const ZONE2_PROPS: ZonePropsDef = {
   buildings: [
-    { kind: 'inn', x: 13, z: 306, w: 6, d: 7, rot: -1.0 },
-    { kind: 'house', x: -13, z: 308, w: 7, d: 6, rot: 0.5 },
-    { kind: 'house', x: -12, z: 291, w: 6, d: 5, rot: 2.6 },
-    { kind: 'house', x: 11, z: 316, w: 6, d: 5, rot: 0.3 },
+    { kind: 'inn', x: 13, z: 306, w: 12, d: 14, rot: -1.0 },
+    { kind: 'house', prop: 'house2', x: -13, z: 308, w: 14, d: 12, rot: 0.5 },
+    { kind: 'house', prop: 'house2', x: -12, z: 291, w: 12, d: 10, rot: 2.6 },
+    { kind: 'house', prop: 'house2', x: 14, z: 322, w: 12, d: 10, rot: 0.3 },
   ],
   wells: [{ x: 0, z: 302, r: 1.5 }],
   stalls: [{ x: -5, z: 310.5, rot: Math.PI / 2, r: 1.7 }],

@@ -223,4 +223,6 @@ export interface IWorld {
   marketCollect(): void;
   enterDungeon(dungeonId: string): void;
   leaveDungeon(): void;
+  /** GM-only: toggle free-flight mode. */
+  toggleGmFly(): void;
 }

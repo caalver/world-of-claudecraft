@@ -230,6 +230,7 @@ export class ClientWorld implements IWorld {
   marketInfo: MarketInfo | null = null;
   markers: Record<number, number> = {}; // entityId -> markerId, mirrored from the self-wire
   realm = '';
+  isGm = false;
   // bumped whenever a fresh social snapshot lands, so an open panel re-renders
   private socialDirty = false;
   // snapshot interpolation
@@ -341,6 +342,7 @@ export class ClientWorld implements IWorld {
       this.playerId = msg.pid;
       this.cfg.seed = msg.seed;
       if (typeof msg.realm === 'string') this.realm = msg.realm;
+      this.isGm = !!msg.gm;
       this.connected = true;
       return;
     }
@@ -475,6 +477,7 @@ export class ClientWorld implements IWorld {
       e.aggroTargetId = w.aggro ?? null;
       e.tappedById = w.tap ?? null;
       e.ownerId = w.own ?? null;
+      e.flying = !!w.fly;
       e.threat = new Map(w.thr ?? []);
       e.auras = (w.auras ?? []).map((a: any) => ({
         id: a.id, name: a.name, kind: a.kind, remaining: a.rem, duration: a.dur,
@@ -498,6 +501,7 @@ export class ClientWorld implements IWorld {
     const e = s ? applyWire(s) : null;
     if (s && e) {
       seen.add(s.id);
+      e.gm = this.isGm;
       e.resource = s.res;
       e.maxResource = s.mres;
       e.resourceType = s.rtype;
@@ -739,6 +743,10 @@ export class ClientWorld implements IWorld {
   }
   leaveDungeon(): void {
     this.cmd({ cmd: 'leave_dungeon' });
+  }
+  toggleGmFly(): void {
+    if (!this.isGm) return;
+    this.cmd({ cmd: 'gm_fly' });
   }
   // legacy aliases kept for older scripts
   enterCrypt(): void {

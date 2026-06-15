@@ -507,6 +507,10 @@ export interface Entity {
   /** GM character: invulnerable (dealDamage no-ops). Server-set from the
    *  characters.is_gm column; never user-settable. */
   gm?: boolean;
+  /** GM fly mode: free movement, no gravity; toggled via gm_fly command. */
+  flying?: boolean;
+  /** 0..1 ramp while flying horizontally; maps to 100%..500% run speed. */
+  flyBoost?: number;
   respawnTimer: number;
   corpseTimer: number;
   lootable: boolean;

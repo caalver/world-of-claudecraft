@@ -797,11 +797,11 @@ export const ZONE3_ITEMS: Record<string, ItemDef> = {
 
 export const ZONE3_PROPS: ZonePropsDef = {
   buildings: [
-    { kind: 'house', x: 14, z: 671, w: 7, d: 6, rot: -0.5 },
-    { kind: 'house', x: 8, z: 650, w: 6, d: 5, rot: 0.4 },
-    { kind: 'house', x: 18, z: 660, w: 6, d: 5, rot: 1.2 },
-    { kind: 'inn', x: -15, z: 666, w: 6, d: 7, rot: 0.6 },
-    { kind: 'chapel', x: -16, z: 650, w: 5, d: 7, rot: 0.9 },
+    { kind: 'house', prop: 'house2', x: 12, z: 672, w: 14, d: 12, rot: -0.5 },
+    { kind: 'house', prop: 'house2', x: 8, z: 650, w: 12, d: 10, rot: 0.4 },
+    { kind: 'house', prop: 'house2', x: 18, z: 660, w: 12, d: 10, rot: 1.2 },
+    { kind: 'inn', x: -15, z: 666, w: 12, d: 14, rot: 0.6 },
+    { kind: 'chapel', x: -16, z: 650, w: 12.5, d: 14, rot: 0.9 },
   ],
   wells: [{ x: 0, z: 662, r: 1.5 }],
   stalls: [

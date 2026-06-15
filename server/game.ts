@@ -167,6 +167,7 @@ function dynamicFields(e: Entity): Record<string, unknown> {
   if (e.aggroTargetId !== null) out.aggro = e.aggroTargetId;
   if (e.tappedById !== null) out.tap = e.tappedById;
   if (e.ownerId !== null) out.own = e.ownerId;
+  if (e.flying) out.fly = 1;
   // top hate-table entries so the party threat meter shows real numbers
   if (e.kind === 'mob' && !e.dead && e.threat.size > 0) out.thr = threatEntries(e, 8);
   if (e.auras.length > 0) {
@@ -449,6 +450,7 @@ export class GameServer {
       name,
       cls,
       realm: REALM,
+      gm: this.sim.entities.get(pid)?.gm ? 1 : 0,
     });
     this.broadcastSystem(`${name} has entered World of Claudecraft.`);
     void this.initSocial(session);
@@ -812,6 +814,7 @@ export class GameServer {
         if (exit) sim.leaveDungeon(pid);
         break;
       }
+      case 'gm_fly': sim.toggleGmFly(pid); break;
     }
   }
 

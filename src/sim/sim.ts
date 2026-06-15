@@ -33,6 +33,10 @@ const GRAVITY = 16;
 const JUMP_VELOCITY = 6;
 const MELEE_ARC = 2.2; // radians half-arc within which melee swings connect
 const FALL_SAFE_DISTANCE = 12; // yards of free fall before damage
+const FLY_ASCEND_SPEED = 7;
+const FLY_BOOST_RAMP_SEC = 3; // seconds of sustained horizontal flight to hit max speed
+const FLY_BOOST_DECAY_SEC = 1.2;
+const FLY_MAX_SPEED_MULT = 5;
 const OBJECT_RESPAWN = 30;
 const PARTY_MAX = 5;
 const PARTY_XP_RANGE = 80; // yards: members this close share kill xp/credit
@@ -698,6 +702,22 @@ export class Sim {
     if (r) r.e.gm = true;
   }
 
+  /** Toggle GM fly mode (is_gm only). */
+  toggleGmFly(pid?: number): void {
+    const r = this.resolve(pid);
+    if (!r?.e.gm) return;
+    const p = r.e;
+    p.flying = !p.flying;
+    p.flyBoost = 0;
+    p.vy = 0;
+    if (p.flying) {
+      p.onGround = false;
+      this.emit({ type: 'log', pid: p.id, text: 'GM fly enabled. Hold Space to rise.', color: '#66bbee' });
+    } else {
+      this.emit({ type: 'log', pid: p.id, text: 'GM fly disabled.', color: '#66bbee' });
+    }
+  }
+
   // Dev/test convenience: jump a player to a level (learns abilities, recalcs stats).
   setPlayerLevel(level: number, pid?: number): void {
     const r = this.resolve(pid);
@@ -926,6 +946,28 @@ export class Sim {
     return true;
   }
 
+  private updateGmFlying(p: Entity, inp: MoveInput, mx: number, mz: number): void {
+    const horizontal = (mx !== 0 || mz !== 0) && !this.isRooted(p);
+    if (horizontal) {
+      if (p.castingAbility) this.cancelCast(p);
+      const len = Math.hypot(mx, mz);
+      mx /= len;
+      mz /= len;
+      p.flyBoost = Math.min(1, (p.flyBoost ?? 0) + DT / FLY_BOOST_RAMP_SEC);
+      const speedMult = 1 + (p.flyBoost ?? 0) * (FLY_MAX_SPEED_MULT - 1);
+      let speed = RUN_SPEED * this.moveSpeedMult(p) * speedMult;
+      if (mz < 0) speed *= BACKPEDAL_MULT;
+      const sin = Math.sin(p.facing), cos = Math.cos(p.facing);
+      p.pos.x += (mz * sin - mx * cos) * speed * DT;
+      p.pos.z += (mz * cos + mx * sin) * speed * DT;
+    } else {
+      p.flyBoost = Math.max(0, (p.flyBoost ?? 0) - DT / FLY_BOOST_DECAY_SEC);
+    }
+    if (inp.jump && !this.isRooted(p)) p.pos.y += FLY_ASCEND_SPEED * DT;
+    p.vy = 0;
+    p.onGround = false;
+  }
+
   private updatePlayerMovement(p: Entity, meta: PlayerMeta): void {
     if (this.updateChargeMovement(p)) return;
     const inp = meta.moveInput;
@@ -945,6 +987,11 @@ export class Sim {
 
     const wantsMove = mx !== 0 || mz !== 0 || inp.jump;
     if (wantsMove && p.sitting) this.standUp(p);
+
+    if (p.gm && p.flying) {
+      this.updateGmFlying(p, inp, mx, mz);
+      return;
+    }
 
     const moving = (mx !== 0 || mz !== 0) && !this.isRooted(p);
     const swimming = this.isSwimming(p);

@@ -382,6 +382,10 @@ async function startGame(world: IWorld, offlineSim: Sim | null, online: ClientWo
     },
     onClickPick: (x, y, button) => handlePick(x, y, button),
     canUseGameKeys: () => !hud.isModalOpen() && chatInput.style.display !== 'block',
+    onGmFly: () => {
+      if (!world.player.gm && !online?.isGm) return;
+      world.toggleGmFly();
+    },
   }, keybinds);
   input.camYaw = world.player.facing;
 

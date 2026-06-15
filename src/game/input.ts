@@ -20,6 +20,8 @@ export interface InputCallbacks {
   onClickPick(x: number, y: number, button: number): void;
   /** When false, edge actions (spells, UI keys) are ignored. */
   canUseGameKeys?: () => boolean;
+  /** GM-only: toggle fly mode (F7 by default). */
+  onGmFly?: () => void;
 }
 
 export interface TouchMoveInput {
@@ -216,6 +218,7 @@ export class Input {
     if (action.startsWith('slot')) { this.cb.onAbility(Number(action.slice(4))); return; }
     switch (action) {
       case 'autorun': this.autorun = !this.autorun; return;
+      case 'gmFly': this.cb.onGmFly?.(); return;
       case 'target': this.cb.onTab(); return;
       case 'interact': this.cb.onUiKey('interact'); return;
       case 'bags': this.cb.onUiKey('bags'); return;
