@@ -9,6 +9,7 @@ import type {
 
 export const ZONE3_ZONE: ZoneDef = {
   id: 'thornpeak_heights',
+// @zone-editor-begin ZONE3_META
   name: 'Thornpeak Heights',
   zMin: 540,
   zMax: 900,
@@ -16,7 +17,13 @@ export const ZONE3_ZONE: ZoneDef = {
   biome: 'peaks',
   hub: { x: 0, z: 660, radius: 20, name: 'Highwatch' },
   graveyard: { x: 15, z: 645 },
-  lakes: [{ x: -70, z: 760, radius: 18 }],
+  welcome: 'Captain Thessaly holds the wall at Highwatch — barely.',
+// @zone-editor-end ZONE3_META
+// @zone-editor-begin ZONE3_LAKES
+  lakes: [
+    { x: -70, z: 760, radius: 18 },
+  ],
+// @zone-editor-end ZONE3_LAKES
   pois: [
     { x: 0, z: 660, label: 'Highwatch' },
     { x: -50, z: 590, label: 'Stalker Ridge' },
@@ -28,16 +35,17 @@ export const ZONE3_ZONE: ZoneDef = {
     { x: -40, z: 830, label: 'Revenant Fields' },
     { x: 0, z: 880, label: 'Gravewyrm Sanctum' },
   ],
-  welcome: 'Captain Thessaly holds the wall at Highwatch — barely.',
 };
 
 // Mountain road from Fenbridge up to Highwatch, then spokes.
+// @zone-editor-begin ZONE3_ROADS
 export const ZONE3_ROADS: { x: number; z: number }[][] = [
-  [{ x: 0, z: 320 }, { x: 10, z: 450 }, { x: 0, z: 540 }, { x: 0, z: 660 }],        // Fenbridge -> Highwatch
-  [{ x: -6, z: 666 }, { x: -60, z: 700 }, { x: -110, z: 735 }],                     // -> ogre war-camp
-  [{ x: 6, z: 668 }, { x: 70, z: 720 }, { x: 110, z: 760 }],                        // -> Stormcrag
-  [{ x: 0, z: 676 }, { x: 0, z: 780 }, { x: 0, z: 860 }],                           // -> Sanctum Approach
+  [{ x: 0, z: 320 }, { x: 10, z: 450 }, { x: 0, z: 540 }, { x: 0, z: 660 }],
+  [{ x: -6, z: 666 }, { x: -60, z: 700 }, { x: -110, z: 735 }],
+  [{ x: 6, z: 668 }, { x: 70, z: 720 }, { x: 110, z: 760 }],
+  [{ x: 0, z: 676 }, { x: 0, z: 780 }, { x: 0, z: 860 }],
 ];
+// @zone-editor-end ZONE3_ROADS
 
 // ---------------------------------------------------------------------------
 // Mobs (overworld only — the Gravewyrm Sanctum mobs live in content/dungeons)
@@ -209,7 +217,7 @@ export const ZONE3_MOBS: Record<string, MobTemplate> = {
 export const ZONE3_NPCS: Record<string, NpcDef> = {
   captain_thessaly: {
     id: 'captain_thessaly', name: 'Captain Thessaly', title: 'Highwatch Captain',
-    pos: { x: 4, z: 664 }, facing: -2.0, color: 0x85929e,
+    pos: { x: 4, z: 664 }, facing: -2, color: 0x85929e,
     questIds: ['q_highwatch_summons', 'q_stalkers', 'q_ogre_bounty', 'q_crushers', 'q_drogmar', 'q_revenants', 'q_revenant_vanguard'],
     greeting: 'Two hundred years this wall has held, $C. It will not break on my watch — but it groans.',
   },
@@ -514,27 +522,21 @@ export const ZONE3_QUEST_ORDER = [
 
 // @zone-editor-begin ZONE3_CAMPS
 export const ZONE3_CAMPS: CampDef[] = [
-  // Ridge stalkers: the ridge flanking the road from the pass
   { mobId: 'ridge_stalker', center: { x: -50, z: 590 }, radius: 22, count: 7 },
   { mobId: 'ridge_stalker', center: { x: 45, z: 600 }, radius: 20, count: 6 },
-  // Kobolds: Deeprock Burrows, west
   { mobId: 'deeprock_kobold', center: { x: 75, z: 625 }, radius: 18, count: 8 },
   { mobId: 'deeprock_kobold', center: { x: 105, z: 600 }, radius: 14, count: 6 },
   { mobId: 'ironvein_foreman', center: { x: 100, z: 617 }, radius: 5, count: 1 },
-  // Ogres: eastern foothills rising to Drogmar's war-camp
   { mobId: 'thornpeak_ogre', center: { x: -90, z: 700 }, radius: 22, count: 7 },
   { mobId: 'thornpeak_ogre', center: { x: -60, z: 730 }, radius: 18, count: 6 },
   { mobId: 'ogre_crusher', center: { x: -125, z: 740 }, radius: 18, count: 8 },
   { mobId: 'warlord_drogmar', center: { x: -132, z: 748 }, radius: 2, count: 1 },
-  // Elementals: Stormcrag, far west
   { mobId: 'stormcrag_elemental', center: { x: 110, z: 760 }, radius: 20, count: 8 },
   { mobId: 'stormcrag_elemental', center: { x: 135, z: 795 }, radius: 16, count: 6 },
   { mobId: 'shardlord_kazzix', center: { x: 145, z: 815 }, radius: 8, count: 1 },
-  // Wyrmcult: tents below the Sanctum
   { mobId: 'wyrmcult_zealot', center: { x: 55, z: 820 }, radius: 20, count: 8 },
   { mobId: 'wyrmcult_zealot', center: { x: 25, z: 845 }, radius: 16, count: 6 },
   { mobId: 'wyrmcult_necromancer', center: { x: 40, z: 855 }, radius: 14, count: 5 },
-  // Revenants: the old battlefield and the Sanctum gate plaza
   { mobId: 'boneclad_revenant', center: { x: -40, z: 830 }, radius: 20, count: 8 },
   { mobId: 'boneclad_revenant', center: { x: -15, z: 860 }, radius: 16, count: 6 },
   { mobId: 'marrowlord_varkas', center: { x: -34, z: 842 }, radius: 5, count: 1 },
@@ -808,17 +810,15 @@ export const ZONE3_PROPS: ZonePropsDef = {
   ],
   wells: [{ x: 0, z: 662, r: 1.5 }],
   stalls: [
-    { x: -7.5, z: 667, rot: Math.PI / 2, r: 1.7 },   // Quartermaster Bree
-    { x: -4.5, z: 673.5, rot: -0.6, r: 1.7 },        // Armorer Hode
+    { x: -7.5, z: 667, rot: 1.571, r: 1.7 },
+    { x: -4.5, z: 673.5, rot: -0.6, r: 1.7 },
   ],
-  mines: [{ x: 88, z: 612, rot: -2.0 }],             // Deeprock Burrows
+  mines: [{ x: 88, z: 612, rot: -2 }],
   docks: [],
   tents: [
-    // Drogmar's war-camp
     { x: -120, z: 733, rot: 0.5, scale: 1.3 },
-    { x: -128, z: 744, rot: 2.0, scale: 1.3 },
-    { x: -136, z: 752, rot: 1.0, scale: 1.5 },
-    // Wyrmcult tents below the Sanctum
+    { x: -128, z: 744, rot: 2, scale: 1.3 },
+    { x: -136, z: 752, rot: 1, scale: 1.5 },
     { x: 50, z: 815, rot: 0.8, scale: 1 },
     { x: 58, z: 823, rot: -0.5, scale: 1 },
     { x: 60, z: 812, rot: 2.2, scale: 1 },
@@ -827,16 +827,15 @@ export const ZONE3_PROPS: ZonePropsDef = {
   crates: [[-118, 728], [-124, 735], [-130, 742], [52, 818], [57, 820]],
   campfires: [[2, 658], [-122, 736], [-136, 743], [52, 817], [28, 847]],
   mudHuts: [],
-  ruinRings: [
-    { x: -40, z: 830, ringR: 7, columns: 6 },        // Revenant Fields battlefield
-    { x: -12, z: 862, ringR: 6, columns: 5 },        // Sanctum Approach ruins
-    { x: 12, z: 858, ringR: 6, columns: 5 },
-  ],
+  ruinRings: [{ x: -40, z: 830, ringR: 7, columns: 6 }, { x: -12, z: 862, ringR: 6, columns: 5 }, { x: 12, z: 858, ringR: 6, columns: 5 }],
   fences: [
-    { x1: -14, z1: 649, x2: -4, z2: 647 },           // south gate, east run
-    { x1: 4, z1: 647, x2: 14, z2: 649 },             // south gate, west run
+    { x1: -14, z1: 649, x2: -4, z2: 647 },
+    { x1: 4, z1: 647, x2: 14, z2: 649 },
   ],
   graveyards: [{ x: 15, z: 645 }],
-  placedAssets: [],
+  placedAssets: [
+  ],
+  authoredTrees: [],
+  suppressedTrees: [],
 };
 // @zone-editor-end ZONE3_PROPS

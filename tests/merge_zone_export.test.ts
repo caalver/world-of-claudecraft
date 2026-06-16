@@ -3,14 +3,16 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   collidersMatchHouse2,
+  formatInlineLakes,
   formatZone1Camps,
   formatZone1Props,
+  formatZoneRoads,
   house2DoorOverhangColliders,
   mergeZoneExport,
   patchNpcPositions,
 } from '../scripts/merge_zone_export.mjs';
-import { ZONE1_CAMPS, ZONE1_NPCS, ZONE1_PROPS } from '../src/sim/content/zone1';
-import { ZONE2_CAMPS, ZONE2_NPCS, ZONE2_PROPS } from '../src/sim/content/zone2';
+import { ZONE1_CAMPS, ZONE1_NPCS, ZONE1_PROPS, ZONE1_ROADS, ZONE1_ZONE } from '../src/sim/content/zone1';
+import { ZONE2_CAMPS, ZONE2_NPCS, ZONE2_PROPS, ZONE2_ROADS, ZONE2_ZONE } from '../src/sim/content/zone2';
 import { buildZoneEditorExport } from '../src/dev/zone_editor';
 
 describe('merge_zone_export', () => {
@@ -25,6 +27,17 @@ describe('merge_zone_export', () => {
     expect(text).toContain("kind: 'house', prop: 'house2', x: 11.441");
     expect(text).not.toContain('house2DoorOverhangColliders');
     expect(text).toContain('placedAssets: [');
+    expect(text).toContain('suppressedTrees: [],');
+  });
+
+  it('formatZoneRoads emits road polylines', () => {
+    const text = formatZoneRoads([
+      [{ x: 0, z: 8 }, { x: -8, z: 30 }],
+      [{ x: 8, z: 2 }, { x: 30, z: 8 }],
+    ], 'ZONE1_ROADS');
+    expect(text).toContain('export const ZONE1_ROADS');
+    expect(text).toContain('{ x: 0, z: 8 }');
+    expect(text).toContain('{ x: -8, z: 30 }');
   });
 
   it('formatZone1Props emits placed asset colliders', () => {
@@ -69,8 +82,14 @@ describe('merge_zone_export', () => {
     expect(out).toContain("questIds: ['q_wolves']");
   });
 
+  it('formatInlineLakes emits lake entries inside zone def', () => {
+    const text = formatInlineLakes([{ x: -92, z: 88, radius: 30 }]);
+    expect(text).toContain('lakes: [');
+    expect(text).toContain('{ x: -92, z: 88, radius: 30 }');
+  });
+
   it('round-trips zone1 through export → merge without losing markers', () => {
-    const fixture = buildZoneEditorExport('eastbrook_vale', ZONE1_PROPS, ZONE1_NPCS, ZONE1_CAMPS);
+    const fixture = buildZoneEditorExport('eastbrook_vale', ZONE1_ZONE, ZONE1_PROPS, ZONE1_NPCS, ZONE1_CAMPS, ZONE1_ROADS, ZONE1_ZONE.lakes);
     const zonePath = path.join(process.cwd(), 'src', 'sim', 'content', 'zone1.ts');
     const original = readFileSync(zonePath, 'utf8');
     const tmpExport = path.join(process.cwd(), 'tests', 'fixtures', 'eastbrook_roundtrip.json');
@@ -81,6 +100,8 @@ describe('merge_zone_export', () => {
     const merged = readFileSync(zonePath, 'utf8');
     expect(merged).toContain('// @zone-editor-begin ZONE1_PROPS');
     expect(merged).toContain('// @zone-editor-end ZONE1_CAMPS');
+    expect(merged).toContain('// @zone-editor-end ZONE1_ROADS');
+    expect(merged).toContain('// @zone-editor-end ZONE1_LAKES');
     expect(merged).toContain('marshal_redbrook');
     expect(formatZone1Camps(fixture.camps)).toContain("mobId: 'forest_wolf'");
 
@@ -88,7 +109,7 @@ describe('merge_zone_export', () => {
   });
 
   it('round-trips zone2 through export → merge without losing markers', () => {
-    const fixture = buildZoneEditorExport('mirefen_marsh', ZONE2_PROPS, ZONE2_NPCS, ZONE2_CAMPS);
+    const fixture = buildZoneEditorExport('mirefen_marsh', ZONE2_ZONE, ZONE2_PROPS, ZONE2_NPCS, ZONE2_CAMPS, ZONE2_ROADS, ZONE2_ZONE.lakes);
     const zonePath = path.join(process.cwd(), 'src', 'sim', 'content', 'zone2.ts');
     const original = readFileSync(zonePath, 'utf8');
     const tmpExport = path.join(process.cwd(), 'tests', 'fixtures', 'mirefen_roundtrip.json');

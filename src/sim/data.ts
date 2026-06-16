@@ -4,10 +4,8 @@
 // merges those records into the flat tables the rest of the engine consumes,
 // and owns the world-layout constants.
 
-import type {
-  CampDef, DungeonDef, GroundObjectDef, ItemDef, MobTemplate, NpcDef,
-  PlayerClass, QuestDef, QuestState, ZoneDef, ZonePropsDef,
-} from './types';
+import { runtimeZoneList } from './editor_zone_overlay';
+import { stripZoneBands, zoneAtPosition as resolveZoneAtPosition } from './zone_bounds';
 import { BASE_ITEMS } from './content/items';
 import {
   GRAVEYARD_POS, LAKE, TOWN_RADIUS, ZONE1_CAMPS, ZONE1_MOBS, ZONE1_NPCS, ZONE1_OBJECTS,
@@ -21,6 +19,9 @@ import {
   ZONE3_CAMPS, ZONE3_ITEMS, ZONE3_MOBS, ZONE3_NPCS, ZONE3_OBJECTS, ZONE3_PROPS,
   ZONE3_QUESTS, ZONE3_QUEST_ORDER, ZONE3_ROADS, ZONE3_ZONE,
 } from './content/zone3';
+import {
+  ZONE4_CAMPS, ZONE4_NPCS, ZONE4_PROPS, ZONE4_ROADS, ZONE4_ZONE,
+} from './content/zone4';
 import { DUNGEON_DEFS, DUNGEON_MOBS } from './content/dungeons';
 
 export { CLASSES, ABILITIES, abilitiesKnownAt } from './content/classes';
@@ -43,7 +44,7 @@ export const MOBS: Record<string, MobTemplate> = {
 };
 
 export const NPCS: Record<string, NpcDef> = {
-  ...ZONE1_NPCS, ...ZONE2_NPCS, ...ZONE3_NPCS,
+  ...ZONE1_NPCS, ...ZONE2_NPCS, ...ZONE3_NPCS, ...ZONE4_NPCS,
 };
 
 export const QUESTS: Record<string, QuestDef> = {
@@ -54,13 +55,13 @@ export const QUEST_ORDER: string[] = [
   ...ZONE1_QUEST_ORDER, ...ZONE2_QUEST_ORDER, ...ZONE3_QUEST_ORDER,
 ];
 
-export const CAMPS: CampDef[] = [...ZONE1_CAMPS, ...ZONE2_CAMPS, ...ZONE3_CAMPS];
+export const CAMPS: CampDef[] = [...ZONE1_CAMPS, ...ZONE2_CAMPS, ...ZONE3_CAMPS, ...ZONE4_CAMPS];
 
 export const GROUND_OBJECTS: GroundObjectDef[] = [...ZONE1_OBJECTS, ...ZONE2_OBJECTS, ...ZONE3_OBJECTS];
 
-export const ROADS: { x: number; z: number }[][] = [...ZONE1_ROADS, ...ZONE2_ROADS, ...ZONE3_ROADS];
+export const ROADS: { x: number; z: number }[][] = [...ZONE1_ROADS, ...ZONE2_ROADS, ...ZONE3_ROADS, ...ZONE4_ROADS];
 
-export const PROPS: ZonePropsDef = mergeProps([ZONE1_PROPS, ZONE2_PROPS, ZONE3_PROPS]);
+export const PROPS: ZonePropsDef = mergeProps([ZONE1_PROPS, ZONE2_PROPS, ZONE3_PROPS, ZONE4_PROPS]);
 
 function mergeProps(sets: ZonePropsDef[]): ZonePropsDef {
   return {
@@ -78,6 +79,7 @@ function mergeProps(sets: ZonePropsDef[]): ZonePropsDef {
     graveyards: sets.flatMap((s) => s.graveyards),
     placedAssets: sets.flatMap((s) => s.placedAssets ?? []),
     authoredTrees: sets.flatMap((s) => s.authoredTrees ?? []),
+    suppressedTrees: sets.flatMap((s) => s.suppressedTrees ?? []),
   };
 }
 
@@ -108,7 +110,9 @@ export const GROUP_XP_BONUS = [1, 1, 1.166, 1.3, 1.43];
 // zMax. Aldermere sits in an eastern protrusion past x=+180 (see below).
 // ---------------------------------------------------------------------------
 
-export const ZONES: ZoneDef[] = [ZONE1_ZONE, ZONE2_ZONE, ZONE3_ZONE];
+// @zone-editor-begin ZONES_REGISTRY
+export const ZONES: ZoneDef[] = [ZONE1_ZONE, ZONE2_ZONE, ZONE3_ZONE, ZONE4_ZONE];
+// @zone-editor-end ZONES_REGISTRY
 
 export const WORLD_SIZE = 360; // main strip width: x spans [-180, 180]
 export const WORLD_MIN_X = -WORLD_SIZE / 2;
@@ -134,17 +138,24 @@ export function inOverworldBounds(x: number, z: number): boolean {
   return (x > WORLD_MIN_X && x < WORLD_MAX_X && z > WORLD_MIN_Z && z < WORLD_MAX_Z)
     || isInEastProtrusion(x, z);
 }
-export const WORLD_MIN_Z = ZONES[0].zMin;
-export const WORLD_MAX_Z = ZONES[ZONES.length - 1].zMax;
+const STRIP_ZONE_BANDS = stripZoneBands(ZONES);
+export const WORLD_MIN_Z = Math.min(...STRIP_ZONE_BANDS.map((z) => z.zMin));
+export const WORLD_MAX_Z = Math.max(...STRIP_ZONE_BANDS.map((z) => z.zMax));
 
 export const PLAYER_START = { x: 2, z: -2 };
 
-// Zone containing a world position (overworld only; clamps to the strip ends).
+function activeZones(): ZoneDef[] {
+  return runtimeZoneList() ?? ZONES;
+}
+
+// Zone containing a world position (overworld). Uses x bounds for city/protrusion zones.
+export function zoneAtPosition(x: number, z: number): ZoneDef {
+  return resolveZoneAtPosition(x, z, activeZones());
+}
+
+// Legacy z-only lookup — strip bands at x = 0. Prefer zoneAtPosition(x, z) when x matters.
 export function zoneAt(z: number): ZoneDef {
-  for (const zone of ZONES) {
-    if (z < zone.zMax) return zone;
-  }
-  return ZONES[ZONES.length - 1];
+  return zoneAtPosition(0, z);
 }
 
 export function zoneWelcomeText(zone: ZoneDef, questState: (questId: string) => QuestState): string | null {

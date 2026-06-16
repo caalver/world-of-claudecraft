@@ -3,7 +3,7 @@ import type { IWorld, MarketInfo } from '../world_api';
 import { Renderer } from '../render/renderer';
 import {
   ABILITIES, CLASSES, DUNGEON_LIST, DUNGEON_X_THRESHOLD, ITEMS, MOBS, NPCS, QUESTS,
-  WORLD_MAX_X, WORLD_MAX_Z, WORLD_MIN_X, WORLD_MIN_Z, ZONES, dungeonAt, questRewardItem, zoneAt,
+  WORLD_MAX_X, WORLD_MAX_Z, WORLD_MIN_X, WORLD_MIN_Z, ZONES, dungeonAt, questRewardItem, zoneAt, zoneAtPosition,
   EAST_PROTRUSION,
   zoneWelcomeText,
 } from '../sim/data';
@@ -749,7 +749,7 @@ export class Hud {
     // A ~5yd dead-band past the boundary stops a player straddling the border
     // from re-triggering the banner/log (and the map canvas regen) every step.
     const inDungeon = p.pos.x > DUNGEON_X_THRESHOLD;
-    const currentZone = zoneAt(p.pos.z);
+    const currentZone = zoneAtPosition(p.pos.x, p.pos.z);
     if (!inDungeon && currentZone.id !== this.lastZoneId) {
       const lastZone = ZONES.find((z) => z.id === this.lastZoneId);
       const pastDeadBand = !lastZone
@@ -923,7 +923,7 @@ export class Hud {
     const ctx = this.minimapCtx;
     const S = 162;
     const p = this.sim.player;
-    const region = this.zoneMapRegion(zoneAt(p.pos.z));
+    const region = this.zoneMapRegion(zoneAtPosition(p.pos.x, p.pos.z));
     this.ensureMinimapBg(region);
     const spanX = region.maxX - region.minX;
     ctx.clearRect(0, 0, S, S);

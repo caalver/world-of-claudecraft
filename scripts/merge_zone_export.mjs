@@ -15,25 +15,43 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-/** @type {Record<string, { file: string; exportName: string; propsMarker: string; campsMarker: string }>} */
+/** @type {Record<string, { file: string; exportName: string; propsMarker: string; campsMarker: string; roadsMarker: string; lakesMarker: string }>} */
 export const ZONE_TARGETS = {
   eastbrook_vale: {
     file: 'src/sim/content/zone1.ts',
     exportName: 'eastbrook_vale.json',
     propsMarker: 'ZONE1_PROPS',
     campsMarker: 'ZONE1_CAMPS',
+    roadsMarker: 'ZONE1_ROADS',
+    lakesMarker: 'ZONE1_LAKES',
+    metaMarker: 'ZONE1_META',
   },
   mirefen_marsh: {
     file: 'src/sim/content/zone2.ts',
     exportName: 'mirefen_marsh.json',
     propsMarker: 'ZONE2_PROPS',
     campsMarker: 'ZONE2_CAMPS',
+    roadsMarker: 'ZONE2_ROADS',
+    lakesMarker: 'ZONE2_LAKES',
+    metaMarker: 'ZONE2_META',
   },
   thornpeak_heights: {
     file: 'src/sim/content/zone3.ts',
     exportName: 'thornpeak_heights.json',
     propsMarker: 'ZONE3_PROPS',
     campsMarker: 'ZONE3_CAMPS',
+    roadsMarker: 'ZONE3_ROADS',
+    lakesMarker: 'ZONE3_LAKES',
+    metaMarker: 'ZONE3_META',
+  },
+  aldermere: {
+    file: 'src/sim/content/zone4.ts',
+    exportName: 'aldermere.json',
+    propsMarker: 'ZONE4_PROPS',
+    campsMarker: 'ZONE4_CAMPS',
+    roadsMarker: 'ZONE4_ROADS',
+    lakesMarker: 'ZONE4_LAKES',
+    metaMarker: 'ZONE4_META',
   },
 };
 
@@ -164,9 +182,16 @@ export function formatZoneProps(props, stallComments = [], propsExport = 'ZONE1_
     ...(props.placedAssets ?? []).map((a) => `${formatPlacedAsset(a)},`),
     '  ],',
     formatAuthoredTrees(props.authoredTrees),
+    formatSuppressedTrees(props.suppressedTrees),
     '};',
   ];
   return lines.join('\n');
+}
+
+function formatSuppressedTrees(suppressed) {
+  if (!suppressed?.length) return '  suppressedTrees: [],';
+  const rows = suppressed.map((s) => `    { x: ${fmtNum(s.x)}, z: ${fmtNum(s.z)} },`);
+  return ['  suppressedTrees: [', ...rows, '  ],'].join('\n');
 }
 
 function formatAuthoredTrees(trees) {
@@ -195,6 +220,18 @@ export function formatZoneCamps(camps, campsExport = 'ZONE1_CAMPS') {
 
 /** Back-compat alias */
 export const formatZone1Camps = formatZoneCamps;
+
+/** @param {{ x: number; z: number }[][]} roads */
+export function formatZoneRoads(roads, roadsExport = 'ZONE1_ROADS') {
+  if (!roads?.length) {
+    return `export const ${roadsExport}: { x: number; z: number }[][] = [];`;
+  }
+  const rows = roads.map((seg) => {
+    const pts = seg.map((p) => `{ x: ${fmtNum(p.x)}, z: ${fmtNum(p.z)} }`).join(', ');
+    return `  [${pts}],`;
+  });
+  return [`export const ${roadsExport}: { x: number; z: number }[][] = [`, ...rows, '];'].join('\n');
+}
 
 export function extractStallComments(zoneContent, propsMarker = 'ZONE1_PROPS') {
   const comments = [];
@@ -233,27 +270,108 @@ export function patchNpcPositions(content, npcUpdates) {
   return out;
 }
 
+/** @param {{ x: number; z: number; radius: number }[]} lakes */
+export function formatInlineLakes(lakes) {
+  if (!lakes?.length) return '  lakes: [],';
+  const rows = lakes.map((l) => `    { x: ${fmtNum(l.x)}, z: ${fmtNum(l.z)}, radius: ${fmtNum(l.radius)} },`);
+  return ['  lakes: [', ...rows, '  ],'].join('\n');
+}
+
+/** @param {import('../src/sim/types').ZoneDef} zone */
+export function formatZoneMeta(zone) {
+  const esc = (s) => String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const lines = [
+    `  name: '${esc(zone.name)}',`,
+    `  zMin: ${fmtNum(zone.zMin)},`,
+    `  zMax: ${fmtNum(zone.zMax)},`,
+    `  levelRange: [${zone.levelRange[0]}, ${zone.levelRange[1]}],`,
+    `  biome: '${zone.biome}',`,
+    `  hub: { x: ${fmtNum(zone.hub.x)}, z: ${fmtNum(zone.hub.z)}, radius: ${fmtNum(zone.hub.radius)}, name: '${esc(zone.hub.name)}' },`,
+    `  graveyard: { x: ${fmtNum(zone.graveyard.x)}, z: ${fmtNum(zone.graveyard.z)} },`,
+  ];
+  if (zone.xMin != null && zone.xMax != null) {
+    lines.push(`  xMin: ${fmtNum(zone.xMin)},`);
+    lines.push(`  xMax: ${fmtNum(zone.xMax)},`);
+  }
+  if (zone.settlements?.length) {
+    lines.push('  settlements: [');
+    for (const s of zone.settlements) {
+      lines.push(`    { x: ${fmtNum(s.x)}, z: ${fmtNum(s.z)}, radius: ${fmtNum(s.radius)}, name: '${esc(s.name)}' },`);
+    }
+    lines.push('  ],');
+  }
+  if (zone.welcome) lines.push(`  welcome: '${esc(zone.welcome)}',`);
+  if (zone.welcomeQuestId) lines.push(`  welcomeQuestId: '${esc(zone.welcomeQuestId)}',`);
+  return lines.join('\n');
+}
+
+/** @param {{ zoneOrder: string[]; zones: import('../src/sim/types').ZoneDef[] }} payload */
+export function formatZonesRegistry(zoneOrder, zonesById) {
+  const imports = [];
+  const entries = [];
+  for (const id of zoneOrder) {
+    const zone = zonesById[id];
+    if (!zone) continue;
+    const target = ZONE_TARGETS[id];
+    if (target) {
+      const num = target.file.match(/zone(\d+)/)?.[1] ?? '1';
+      imports.push(`  ZONE${num}_ZONE,`);
+      entries.push(`  ZONE${num}_ZONE,`);
+    }
+  }
+  return {
+    imports: [...new Set(imports)].join('\n'),
+    body: entries.join('\n'),
+  };
+}
+
 function loadExport(exportPath) {
   const raw = fs.readFileSync(exportPath, 'utf8');
   const data = JSON.parse(raw);
   if (!data.zone || !data.props || !data.npcs || !data.camps) {
     throw new Error('Export JSON must include zone, props, npcs, and camps');
   }
+  if (!Array.isArray(data.roads)) data.roads = [];
+  if (!Array.isArray(data.lakes)) data.lakes = [];
+  if (data.zoneDef) {
+    data.zoneDef.lakes = data.lakes;
+  }
   return data;
 }
 
 export function mergeZoneExport(exportPath, zoneFilePath) {
   const data = loadExport(exportPath);
-  const target = ZONE_TARGETS[data.zone];
-  if (!target) throw new Error(`Unknown zone id: ${data.zone}`);
-  const zonePath = zoneFilePath
+  let target = ZONE_TARGETS[data.zone];
+  let zonePath = zoneFilePath
     ? (path.isAbsolute(zoneFilePath) ? zoneFilePath : path.join(ROOT, zoneFilePath))
-    : path.join(ROOT, target.file);
+    : target ? path.join(ROOT, target.file) : null;
+  if (!zonePath) throw new Error(`Unknown zone id: ${data.zone}`);
+  if (!target) {
+    const num = zonePath.match(/zone(\d+)\.ts/i)?.[1];
+    if (!num) throw new Error(`Unknown zone id: ${data.zone}`);
+    target = {
+      file: path.relative(ROOT, zonePath).replace(/\\/g, '/'),
+      propsMarker: `ZONE${num}_PROPS`,
+      campsMarker: `ZONE${num}_CAMPS`,
+      roadsMarker: `ZONE${num}_ROADS`,
+      lakesMarker: `ZONE${num}_LAKES`,
+      metaMarker: `ZONE${num}_META`,
+    };
+  }
   let content = fs.readFileSync(zonePath, 'utf8');
   const stallComments = extractStallComments(content, target.propsMarker);
 
   content = replaceMarkedBlock(content, target.campsMarker, formatZoneCamps(data.camps, target.campsMarker));
   content = replaceMarkedBlock(content, target.propsMarker, formatZoneProps(data.props, stallComments, target.propsMarker));
+  if (content.includes(`// @zone-editor-begin ${target.roadsMarker}`)) {
+    content = replaceMarkedBlock(content, target.roadsMarker, formatZoneRoads(data.roads, target.roadsMarker));
+  }
+  if (content.includes(`// @zone-editor-begin ${target.lakesMarker}`)) {
+    content = replaceMarkedBlock(content, target.lakesMarker, formatInlineLakes(data.lakes));
+  }
+  if (data.zoneDef && content.includes(`// @zone-editor-begin ${target.metaMarker}`)) {
+    content = replaceMarkedBlock(content, target.metaMarker, formatZoneMeta(data.zoneDef));
+  }
   content = patchNpcPositions(content, data.npcs);
 
   fs.writeFileSync(zonePath, content, 'utf8');

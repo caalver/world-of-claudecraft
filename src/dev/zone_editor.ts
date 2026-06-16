@@ -4,16 +4,20 @@
 import * as THREE from 'three';
 import type { Renderer } from '../render/renderer';
 import { buildProps } from '../render/props';
+import { buildAuthoredTreesPreview } from '../render/foliage';
 import type { IWorld } from '../world_api';
 import type { Sim } from '../sim/sim';
-import type { BuildingDef, CampDef, NpcDef, PlacedAssetDef, ZonePropsDef } from '../sim/types';
+import type { BuildingDef, CampDef, NpcDef, PlacedAssetDef, ZoneDef, ZonePropsDef } from '../sim/types';
 import {
+  ALL_ZONE_SOURCES,
+  allEditorZoneIds,
   cloneZoneEditorProps,
+  hasZoneFile,
   resolveEditorZoneId,
-  ZONE_EDITOR_IDS,
   ZONE_EDITOR_SOURCES,
   type EditorZoneId,
 } from './zone_editor_zones';
+import type { MapEditorZoneBundle } from './map_editor_types';
 import {
   PROP_LIBRARY,
   defaultPlacedColliders,
@@ -23,6 +27,16 @@ import {
   refreshPlacedColliders,
 } from '../sim/prop_library';
 import { terrainHeight } from '../sim/world';
+import {
+  addSuppression,
+  materializeProceduralTreesForZone,
+  mergeEditorTrees,
+  removeExplicitTreeAt,
+  treeKey,
+  upsertExplicitTree,
+  type SuppressedTreeDef,
+} from './zone_editor_trees';
+import type { AuthoredTreeDef } from '../render/foliage';
 
 const WORLD_SEED = 20061;
 
@@ -38,7 +52,55 @@ function pointSegDist(px: number, pz: number, x1: number, z1: number, x2: number
   return Math.hypot(apx - abx * t, apz - abz * t);
 }
 
-type SelKind = 'building' | 'well' | 'stall' | 'mine' | 'dock' | 'tent' | 'crate' | 'campfire' | 'mudHut' | 'graveyard' | 'fence' | 'npc' | 'camp' | 'placedAsset';
+/** Pick nearest road polyline index for map editor selection (unit-tested). */
+export function nearestRoadAt(
+  x: number,
+  z: number,
+  roads: { x: number; z: number }[][],
+  pickSlack = 3,
+): number {
+  let bestIdx = -1;
+  let bestScore = Infinity;
+  for (let i = 0; i < roads.length; i++) {
+    const road = roads[i];
+    if (road.length < 2) continue;
+    let minD = Infinity;
+    for (let j = 0; j + 1 < road.length; j++) {
+      minD = Math.min(minD, pointSegDist(x, z, road[j].x, road[j].z, road[j + 1].x, road[j + 1].z));
+    }
+    const score = minD / pickSlack;
+    if (score < 1.2 && score < bestScore) {
+      bestScore = score;
+      bestIdx = i;
+    }
+  }
+  return bestIdx;
+}
+
+export type EditorLakeDef = { x: number; z: number; radius: number };
+
+/** Pick nearest lake index for map editor selection (unit-tested). */
+export function nearestLakeAt(
+  x: number,
+  z: number,
+  lakes: EditorLakeDef[],
+  pickSlack = 1.35,
+): number {
+  let bestIdx = -1;
+  let bestScore = Infinity;
+  for (let i = 0; i < lakes.length; i++) {
+    const lake = lakes[i];
+    const d = Math.hypot(x - lake.x, z - lake.z);
+    const score = d / Math.max(1, lake.radius);
+    if (d <= lake.radius * pickSlack && score < bestScore) {
+      bestScore = score;
+      bestIdx = i;
+    }
+  }
+  return bestIdx;
+}
+
+type SelKind = 'building' | 'well' | 'stall' | 'mine' | 'dock' | 'tent' | 'crate' | 'campfire' | 'mudHut' | 'graveyard' | 'fence' | 'npc' | 'camp' | 'placedAsset' | 'authoredTree' | 'road' | 'lake';
 
 interface Selection {
   kind: SelKind;
@@ -47,17 +109,23 @@ interface Selection {
 }
 
 export interface ZoneEditorExport {
-  zone: EditorZoneId;
+  zone: string;
+  zoneDef: ZoneDef;
   props: ZonePropsDef;
   npcs: Record<string, Pick<NpcDef, 'pos' | 'facing'>>;
   camps: CampDef[];
+  roads: { x: number; z: number }[][];
+  lakes: EditorLakeDef[];
 }
 
 export function buildZoneEditorExport(
-  zone: EditorZoneId,
+  zone: string,
+  zoneDef: ZoneDef,
   props: ZonePropsDef,
   npcs: Record<string, NpcDef>,
   camps: CampDef[],
+  roads: { x: number; z: number }[][] = [],
+  lakes: EditorLakeDef[] = [],
 ): ZoneEditorExport {
   const npcOut: ZoneEditorExport['npcs'] = {};
   for (const [id, n] of Object.entries(npcs)) {
@@ -65,15 +133,28 @@ export function buildZoneEditorExport(
   }
   return {
     zone,
+    zoneDef: structuredClone(zoneDef),
     props: structuredClone(props),
     npcs: npcOut,
     camps: structuredClone(camps),
+    roads: structuredClone(roads),
+    lakes: structuredClone(lakes),
   };
+}
+
+export interface ZoneEditorOptions {
+  /** Map editor page — always active, no F8 toggle. */
+  standalone?: boolean;
+  /** Hide the built-in floating panel (map editor supplies its own chrome). */
+  hidePanel?: boolean;
+  /** World seed for procedural tree hydration (map editor). */
+  worldSeed?: number;
 }
 
 export class ZoneEditor {
   active = false;
-  private zoneId: EditorZoneId = 'eastbrook_vale';
+  private zoneId = 'eastbrook_vale';
+  private currentZone: ZoneDef = structuredClone(ZONE_EDITOR_SOURCES.eastbrook_vale.zone);
   private panel: HTMLDivElement;
   private group = new THREE.Group();
   private meshGroup = new THREE.Group();
@@ -95,12 +176,26 @@ export class ZoneEditor {
   private wireDirty = true;
   private meshDirty = true;
   private saving = false;
+  private readonly standalone: boolean;
+  private readonly worldSeed: number;
+  private explicitAuthoredTrees: AuthoredTreeDef[] = [];
+  private suppressedTrees: SuppressedTreeDef[] = [];
+  private proceduralTreeKeys = new Set<string>();
+  private dragTreeStart: { x: number; z: number; key: string; wasProcedural: boolean } | null = null;
+  private treeFoliageDirty = false;
+  private roads: { x: number; z: number }[][] = [];
+  private roadsDirty = false;
+  private lakes: EditorLakeDef[] = [];
+  private lakesDirty = false;
 
   constructor(
     private renderer: Renderer,
     private world: IWorld,
     private offlineSim: Sim | null,
+    opts: ZoneEditorOptions = {},
   ) {
+    this.standalone = opts.standalone ?? false;
+    this.worldSeed = opts.worldSeed ?? WORLD_SEED;
     this.props = cloneZoneEditorProps(ZONE_EDITOR_SOURCES.eastbrook_vale.props);
     this.npcs = structuredClone(ZONE_EDITOR_SOURCES.eastbrook_vale.npcs);
     this.camps = structuredClone(ZONE_EDITOR_SOURCES.eastbrook_vale.camps);
@@ -176,13 +271,20 @@ export class ZoneEditor {
     Object.assign(zoneRow.style, { marginTop: '6px', marginBottom: '4px' });
     const zoneSelect = this.panel.querySelector('.ze-zone-select') as HTMLSelectElement;
     Object.assign(zoneSelect.style, { marginLeft: '6px', maxWidth: '200px' });
-    for (const id of ZONE_EDITOR_IDS) {
+    if (this.standalone) {
+      zoneSelect.disabled = true;
+      zoneSelect.title = 'Use the Edit zone band dropdown in the map editor sidebar';
+    }
+    for (const id of allEditorZoneIds()) {
+      const src = ALL_ZONE_SOURCES[id];
+      if (!src) continue;
       const opt = document.createElement('option');
       opt.value = id;
-      opt.textContent = ZONE_EDITOR_SOURCES[id].name;
+      opt.textContent = src.name;
       zoneSelect.appendChild(opt);
     }
     zoneSelect.addEventListener('change', () => {
+      if (this.standalone) return;
       const next = zoneSelect.value as EditorZoneId;
       if (next === this.zoneId) return;
       this.loadZone(next);
@@ -199,20 +301,210 @@ export class ZoneEditor {
       select.appendChild(opt);
     }
     select.addEventListener('change', () => { this.libraryModel = select.value; });
-    document.body.appendChild(this.panel);
+    if (!opts.hidePanel) document.body.appendChild(this.panel);
+    else this.panel.style.display = 'none';
 
     window.addEventListener('keydown', (e) => this.onKeyDown(e));
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
+    if (this.standalone) this.setActive(true);
+  }
+
+  get currentZoneId(): string { return this.zoneId; }
+
+  get currentZoneDef(): ZoneDef { return this.currentZone; }
+
+  /** Map editor: load a bundle directly (supports custom zones). */
+  switchToBundle(bundle: MapEditorZoneBundle): void {
+    this.loadFromBundle(bundle);
+  }
+
+  /** Map editor: sync zone dropdown with current bundle list. */
+  refreshZoneSelectFromOrder(zoneOrder: string[], bundles: Map<string, MapEditorZoneBundle>): void {
+    const zoneSelect = this.panel.querySelector('.ze-zone-select') as HTMLSelectElement;
+    zoneSelect.innerHTML = '';
+    for (const id of zoneOrder) {
+      const bundle = bundles.get(id);
+      if (!bundle) continue;
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = bundle.zone.name;
+      zoneSelect.appendChild(opt);
+    }
+    if ([...zoneSelect.options].some((o) => o.value === this.zoneId)) {
+      zoneSelect.value = this.zoneId;
+    }
+  }
+
+  switchZone(zoneId: string): void {
+    if (hasZoneFile(zoneId)) this.loadZone(zoneId);
+  }
+
+  get selection(): Selection | null { return this.sel; }
+
+  selectAuthoredTree(index: number): void {
+    if (index < 0 || index >= (this.props.authoredTrees?.length ?? 0)) return;
+    this.sel = { kind: 'authoredTree', index };
+    this.markDirty(false);
+    this.refreshPanel();
+  }
+
+  updateSelectedAuthoredTree(patch: { kind?: 'tree' | 'tree2'; scale?: number }): void {
+    if (!this.sel || this.sel.kind !== 'authoredTree') return;
+    const t = this.props.authoredTrees?.[this.sel.index];
+    if (!t) return;
+    if (patch.kind) t.kind = patch.kind;
+    if (patch.scale !== undefined) t.scale = Math.max(0.3, Math.min(3, patch.scale));
+    const key = treeKey(t.x, t.z);
+    if (this.proceduralTreeKeys.has(key)) {
+      this.suppressedTrees = addSuppression(this.suppressedTrees, t.x, t.z);
+      this.proceduralTreeKeys.delete(key);
+      this.explicitAuthoredTrees = upsertExplicitTree(this.explicitAuthoredTrees, {
+        x: t.x, z: t.z, kind: t.kind ?? 'tree2', scale: t.scale ?? 1.05,
+      });
+      this.refreshHydratedTrees();
+      this.reselectAuthoredTreeAt(t.x, t.z);
+    } else {
+      this.explicitAuthoredTrees = upsertExplicitTree(this.explicitAuthoredTrees, {
+        x: t.x, z: t.z, kind: t.kind ?? 'tree2', scale: t.scale ?? 1.05,
+      });
+    }
+    this.markDirty();
+  }
+
+  /** Place a new explicit tree (map editor Trees tool). Returns display index. */
+  addExplicitAuthoredTree(x: number, z: number, kind: 'tree' | 'tree2', scale: number): number {
+    this.explicitAuthoredTrees = upsertExplicitTree(this.explicitAuthoredTrees, { x, z, kind, scale });
+    this.refreshHydratedTrees();
+    this.markDirty();
+    return this.reselectAuthoredTreeAt(x, z);
+  }
+
+  consumeTreeFoliageDirty(): boolean {
+    if (!this.treeFoliageDirty) return false;
+    this.treeFoliageDirty = false;
+    return true;
+  }
+
+  readExportState(): { props: ZonePropsDef; npcs: Record<string, NpcDef>; camps: CampDef[]; roads: { x: number; z: number }[][]; lakes: EditorLakeDef[] } {
+    const props = structuredClone(this.props);
+    props.authoredTrees = structuredClone(this.explicitAuthoredTrees);
+    props.suppressedTrees = structuredClone(this.suppressedTrees);
+    return {
+      props,
+      npcs: structuredClone(this.npcs),
+      camps: structuredClone(this.camps),
+      roads: structuredClone(this.roads),
+      lakes: structuredClone(this.lakes),
+    };
+  }
+
+  get panelElement(): HTMLDivElement { return this.panel; }
+
+  get wireGroup(): THREE.Group { return this.group; }
+
+  setRoads(roads: { x: number; z: number }[][]): void {
+    this.roads = structuredClone(roads);
+  }
+
+  consumeRoadsDirty(): boolean {
+    if (!this.roadsDirty) return false;
+    this.roadsDirty = false;
+    return true;
+  }
+
+  selectRoad(index: number): void {
+    if (index < 0 || index >= this.roads.length) return;
+    this.sel = { kind: 'road', index };
+    this.markDirty(false);
+    this.refreshPanel();
+  }
+
+  setLakes(lakes: EditorLakeDef[]): void {
+    this.lakes = structuredClone(lakes);
+  }
+
+  addLake(x: number, z: number, radius: number): number {
+    this.lakes.push({ x, z, radius });
+    this.lakesDirty = true;
+    this.markDirty(false);
+    return this.lakes.length - 1;
+  }
+
+  consumeLakesDirty(): boolean {
+    if (!this.lakesDirty) return false;
+    this.lakesDirty = false;
+    return true;
+  }
+
+  selectLake(index: number): void {
+    if (index < 0 || index >= this.lakes.length) return;
+    this.sel = { kind: 'lake', index };
+    this.markDirty(false);
+    this.refreshPanel();
+  }
+
+  updateSelectedLake(patch: Partial<Pick<EditorLakeDef, 'radius'>>): void {
+    if (this.sel?.kind !== 'lake') return;
+    const lake = this.lakes[this.sel.index];
+    if (!lake) return;
+    if (patch.radius != null) lake.radius = Math.max(3, Math.min(120, patch.radius));
+    this.lakesDirty = true;
+    this.markDirty(false);
+    this.refreshPanel();
+  }
+
+  readWorkingState(): { props: ZonePropsDef; npcs: Record<string, NpcDef>; camps: CampDef[] } {
+    return {
+      props: structuredClone(this.props),
+      npcs: structuredClone(this.npcs),
+      camps: structuredClone(this.camps),
+    };
+  }
+
+  applyWorkingState(state: { props: ZonePropsDef; npcs: Record<string, NpcDef>; camps: CampDef[]; roads?: { x: number; z: number }[][]; lakes?: EditorLakeDef[] }): void {
+    this.explicitAuthoredTrees = structuredClone(state.props.authoredTrees ?? []);
+    this.suppressedTrees = structuredClone(state.props.suppressedTrees ?? []);
+    this.props = cloneZoneEditorProps(state.props);
+    this.props.authoredTrees = [];
+    this.props.suppressedTrees = this.suppressedTrees;
+    this.npcs = structuredClone(state.npcs);
+    this.camps = structuredClone(state.camps);
+    if (state.roads) this.roads = structuredClone(state.roads);
+    if (state.lakes) this.lakes = structuredClone(state.lakes);
+    this.placedIdSeq = 0;
+    this.sel = null;
+    if (this.standalone) this.refreshHydratedTrees();
+    else this.props.authoredTrees = structuredClone(state.props.authoredTrees ?? []);
+    this.markDirty();
+  }
+
+  setPlaceModeEnabled(on: boolean): void {
+    this.placeMode = on;
+    this.refreshPanel();
+  }
+
+  pickGroundAt(clientX: number, clientY: number): { x: number; z: number } | null {
+    return this.groundAtClient(clientX, clientY);
+  }
+
+  async publishToLive(): Promise<void> { await this.saveChanges(); }
+
+  mountPanel(parent: HTMLElement): void {
+    parent.appendChild(this.panel);
+    this.panel.style.display = 'block';
+    this.panel.style.position = 'relative';
+    this.panel.style.left = '0';
+    this.panel.style.bottom = 'auto';
+    this.panel.style.maxWidth = 'none';
+    this.panel.style.width = '100%';
+    this.panel.style.boxShadow = 'none';
   }
 
   attachCanvas(canvas: HTMLCanvasElement): void {
     this.canvas = canvas;
     canvas.addEventListener('pointerdown', (e) => this.onPointerDown(e));
     window.addEventListener('pointermove', (e) => this.onPointerMove(e));
-    window.addEventListener('pointerup', () => {
-      if (this.dragging) this.meshDirty = true;
-      this.dragging = false;
-    });
+    window.addEventListener('pointerup', () => this.onPointerUp());
   }
 
   update(_dt: number): void {
@@ -231,23 +523,57 @@ export class ZoneEditor {
     this.refreshPanel();
   }
 
-  private loadZone(zoneId: EditorZoneId, resetSelection = true): void {
-    const src = ZONE_EDITOR_SOURCES[zoneId];
-    this.zoneId = zoneId;
-    this.props = cloneZoneEditorProps(src.props);
-    this.npcs = structuredClone(src.npcs);
-    this.camps = structuredClone(src.camps);
+  private loadFromBundle(bundle: MapEditorZoneBundle, resetSelection = true): void {
+    this.zoneId = bundle.zone.id;
+    this.currentZone = structuredClone(bundle.zone);
+    this.explicitAuthoredTrees = structuredClone(bundle.props.authoredTrees ?? []);
+    this.suppressedTrees = structuredClone(bundle.props.suppressedTrees ?? []);
+    this.props = cloneZoneEditorProps(bundle.props);
+    this.props.suppressedTrees = this.suppressedTrees;
+    this.npcs = structuredClone(bundle.npcs);
+    this.camps = structuredClone(bundle.camps);
+    this.roads = structuredClone(bundle.roads);
+    this.lakes = structuredClone(bundle.zone.lakes ?? []);
     this.placedIdSeq = 0;
     if (resetSelection) this.sel = null;
+    if (this.standalone) this.refreshHydratedTrees();
+    else this.props.authoredTrees = structuredClone(bundle.props.authoredTrees ?? []);
+    const zoneSelect = this.panel.querySelector('.ze-zone-select') as HTMLSelectElement;
+    if (zoneSelect.value !== this.zoneId) zoneSelect.value = this.zoneId;
+    this.markDirty();
+    if (this.active) this.syncZonePropsVisibility();
+  }
+
+  private loadZone(zoneId: string, resetSelection = true): void {
+    const src = ALL_ZONE_SOURCES[zoneId];
+    if (!src) return;
+    this.zoneId = zoneId;
+    this.currentZone = structuredClone(src.zone);
+    this.explicitAuthoredTrees = structuredClone(src.props.authoredTrees ?? []);
+    this.suppressedTrees = structuredClone(src.props.suppressedTrees ?? []);
+    this.props = cloneZoneEditorProps(src.props);
+    this.props.suppressedTrees = this.suppressedTrees;
+    this.npcs = structuredClone(src.npcs);
+    this.camps = structuredClone(src.camps);
+    this.roads = structuredClone(src.roads);
+    this.lakes = structuredClone(src.zone.lakes ?? []);
+    this.placedIdSeq = 0;
+    if (resetSelection) this.sel = null;
+    if (this.standalone) this.refreshHydratedTrees();
+    else this.props.authoredTrees = structuredClone(src.props.authoredTrees ?? []);
     const zoneSelect = this.panel.querySelector('.ze-zone-select') as HTMLSelectElement;
     if (zoneSelect.value !== zoneId) zoneSelect.value = zoneId;
     this.markDirty();
   }
 
   private syncZonePropsVisibility(): void {
+    const zoneIds = allEditorZoneIds();
     this.renderer.setWorldPropsVisible(true);
-    for (const id of ZONE_EDITOR_IDS) {
+    for (const id of zoneIds) {
       this.renderer.setZonePropsVisible(id, !this.active || id !== this.zoneId);
+    }
+    if (this.active && !hasZoneFile(this.zoneId)) {
+      for (const id of zoneIds) this.renderer.setZonePropsVisible(id, false);
     }
   }
 
@@ -283,7 +609,7 @@ export class ZoneEditor {
   }
 
   private onKeyDown(e: KeyboardEvent): void {
-    if (e.code === 'F8') {
+    if (e.code === 'F8' && !this.standalone) {
       e.preventDefault();
       this.setActive(!this.active);
       return;
@@ -315,6 +641,9 @@ export class ZoneEditor {
     } else if (this.sel.kind === 'placedAsset') {
       if (this.keys.has('BracketLeft')) { this.nudgePlacedScale(-0.1); changed = true; }
       if (this.keys.has('BracketRight')) { this.nudgePlacedScale(0.1); changed = true; }
+    } else if (this.sel.kind === 'authoredTree') {
+      if (this.keys.has('BracketLeft')) { this.nudgeAuthoredTreeScale(-0.05); changed = true; }
+      if (this.keys.has('BracketRight')) { this.nudgeAuthoredTreeScale(0.05); changed = true; }
     }
     return changed;
   }
@@ -348,6 +677,14 @@ export class ZoneEditor {
     if (!a) return;
     a.scale = Math.max(0.2, Math.round((a.scale + delta) * 100) / 100);
     refreshPlacedColliders(a);
+    this.markDirty();
+  }
+
+  private nudgeAuthoredTreeScale(delta: number): void {
+    if (!this.sel || this.sel.kind !== 'authoredTree') return;
+    const t = this.props.authoredTrees?.[this.sel.index];
+    if (!t) return;
+    t.scale = Math.max(0.3, Math.min(3, Math.round(((t.scale ?? 1.05) + delta) * 100) / 100));
     this.markDirty();
   }
 
@@ -390,6 +727,19 @@ export class ZoneEditor {
         break;
       case 'placedAsset':
         this.props.placedAssets.splice(s.index, 1);
+        break;
+      case 'authoredTree': {
+        const t = this.props.authoredTrees?.[s.index];
+        if (t) this.removeAuthoredTree(t);
+        break;
+      }
+      case 'road':
+        this.roads.splice(s.index, 1);
+        this.roadsDirty = true;
+        break;
+      case 'lake':
+        this.lakes.splice(s.index, 1);
+        this.lakesDirty = true;
         break;
       case 'camp':
         this.camps.splice(s.index, 1);
@@ -443,10 +793,21 @@ export class ZoneEditor {
     const hit = this.pickNearest(ground.x, ground.z);
     if (hit) {
       this.sel = hit.sel;
-      this.dragging = true;
-      const anchor = this.anchorFor(hit.sel);
-      this.dragOffset.x = anchor.x - ground.x;
-      this.dragOffset.z = anchor.z - ground.z;
+      this.dragging = hit.sel.kind !== 'road';
+      if (hit.sel.kind === 'authoredTree') {
+        const t = this.props.authoredTrees?.[hit.sel.index];
+        if (t) {
+          const key = treeKey(t.x, t.z);
+          this.dragTreeStart = { x: t.x, z: t.z, key, wasProcedural: this.proceduralTreeKeys.has(key) };
+        }
+      } else {
+        this.dragTreeStart = null;
+      }
+      if (this.dragging) {
+        const anchor = this.anchorFor(hit.sel);
+        this.dragOffset.x = anchor.x - ground.x;
+        this.dragOffset.z = anchor.z - ground.z;
+      }
       e.preventDefault();
       e.stopPropagation();
     }
@@ -520,6 +881,12 @@ export class ZoneEditor {
     } else if (s.kind === 'placedAsset') {
       const a = this.props.placedAssets[s.index];
       if (a) { a.x = x; a.z = z; }
+    } else if (s.kind === 'authoredTree') {
+      const t = this.props.authoredTrees?.[s.index];
+      if (t) { t.x = x; t.z = z; }
+    } else if (s.kind === 'lake') {
+      const lake = this.lakes[s.index];
+      if (lake) { lake.x = x; lake.z = z; this.lakesDirty = true; }
     }
     this.markDirty(false);
   }
@@ -558,9 +925,24 @@ export class ZoneEditor {
       const a = this.props.placedAssets[sel.index];
       return { x: a?.x ?? 0, z: a?.z ?? 0 };
     }
+    if (sel.kind === 'authoredTree') {
+      const t = this.props.authoredTrees?.[sel.index];
+      return { x: t?.x ?? 0, z: t?.z ?? 0 };
+    }
     if (sel.kind === 'fence') {
       const f = this.props.fences[sel.index];
       return f ? fenceMidpoint(f) : { x: 0, z: 0 };
+    }
+    if (sel.kind === 'road') {
+      const road = this.roads[sel.index];
+      if (!road?.length) return { x: 0, z: 0 };
+      let cx = 0, cz = 0;
+      for (const p of road) { cx += p.x; cz += p.z; }
+      return { x: cx / road.length, z: cz / road.length };
+    }
+    if (sel.kind === 'lake') {
+      const lake = this.lakes[sel.index];
+      return { x: lake?.x ?? 0, z: lake?.z ?? 0 };
     }
     const p = this.pickables.find((pk) => this.selKey(pk.sel) === this.selKey(sel));
     return { x: p?.x ?? 0, z: p?.z ?? 0 };
@@ -577,6 +959,19 @@ export class ZoneEditor {
         if (!f) continue;
         const d = pointSegDist(x, z, f.x1, f.z1, f.x2, f.z2);
         score = d / 2.5;
+      } else if (p.sel.kind === 'road') {
+        const road = this.roads[p.sel.index];
+        if (!road || road.length < 2) continue;
+        let minD = Infinity;
+        for (let j = 0; j + 1 < road.length; j++) {
+          minD = Math.min(minD, pointSegDist(x, z, road[j].x, road[j].z, road[j + 1].x, road[j + 1].z));
+        }
+        score = minD / 3;
+      } else if (p.sel.kind === 'lake') {
+        const lake = this.lakes[p.sel.index];
+        if (!lake) continue;
+        const d = Math.hypot(x - lake.x, z - lake.z);
+        score = d / Math.max(1, lake.radius);
       } else {
         const d = Math.hypot(p.x - x, p.z - z);
         score = d / Math.max(0.5, p.r);
@@ -639,6 +1034,35 @@ export class ZoneEditor {
         r: placedAssetFootprintRadius(a),
       });
     });
+    (this.props.authoredTrees ?? []).forEach((t, i) => {
+      out.push({
+        sel: { kind: 'authoredTree', index: i },
+        x: t.x, z: t.z,
+        r: 2.2 * (t.scale ?? 1.05),
+      });
+    });
+    this.roads.forEach((road, i) => {
+      if (road.length < 2) return;
+      let cx = 0, cz = 0, len = 0;
+      for (let j = 0; j + 1 < road.length; j++) {
+        len += Math.hypot(road[j + 1].x - road[j].x, road[j + 1].z - road[j].z);
+      }
+      for (const p of road) { cx += p.x; cz += p.z; }
+      out.push({
+        sel: { kind: 'road', index: i },
+        x: cx / road.length,
+        z: cz / road.length,
+        r: Math.max(3, len * 0.5),
+      });
+    });
+    this.lakes.forEach((lake, i) => {
+      out.push({
+        sel: { kind: 'lake', index: i },
+        x: lake.x,
+        z: lake.z,
+        r: lake.radius,
+      });
+    });
     this.pickables = out;
   }
 
@@ -668,6 +1092,11 @@ export class ZoneEditor {
     if (!this.active) return;
     const preview = buildProps(WORLD_SEED, this.props);
     this.meshGroup.add(preview.group);
+    const trees = buildAuthoredTreesPreview(
+      this.standalone ? this.explicitAuthoredTrees : (this.props.authoredTrees ?? []),
+      WORLD_SEED,
+    );
+    this.meshGroup.add(trees);
   }
 
   private rebuildWireframes(): void {
@@ -727,16 +1156,23 @@ export class ZoneEditor {
         }
       }
     }
+    for (let i = 0; i < (this.props.authoredTrees ?? []).length; i++) {
+      const t = this.props.authoredTrees![i];
+      const sel = this.sel?.kind === 'authoredTree' && this.sel.index === i;
+      const r = 2.2 * (t.scale ?? 1.05);
+      this.addCircle(t.x, t.z, r, sel ? 0x66ff99 : (t.kind === 'tree' ? 0x55aa55 : 0x88cc44));
+    }
   }
 
   private clearGroup(): void {
-    while (this.group.children.length) {
-      const ch = this.group.children[0];
+    const remove: THREE.Object3D[] = [];
+    for (const ch of this.group.children) {
+      if (ch instanceof THREE.Line || ch instanceof THREE.LineSegments) remove.push(ch);
+    }
+    for (const ch of remove) {
       this.group.remove(ch);
-      if (ch instanceof THREE.Line || ch instanceof THREE.LineSegments) {
-        ch.geometry.dispose();
-        (ch.material as THREE.Material).dispose();
-      }
+      ch.geometry.dispose();
+      (ch.material as THREE.Material).dispose();
     }
   }
 
@@ -817,10 +1253,11 @@ export class ZoneEditor {
     const selEl = this.panel.querySelector('.ze-sel') as HTMLDivElement;
     const mode = this.panel.querySelector('.ze-mode') as HTMLDivElement;
     const saveBtn = this.panel.querySelector('.ze-save') as HTMLButtonElement;
-    const src = ZONE_EDITOR_SOURCES[this.zoneId];
-    saveBtn.textContent = `Save to ${src.file}`;
+    const src = hasZoneFile(this.zoneId) ? ALL_ZONE_SOURCES[this.zoneId] : null;
+    saveBtn.textContent = src ? `Save to ${src.file}` : 'Save (publish via map editor sidebar)';
+    saveBtn.disabled = this.standalone && !src;
     status.textContent = this.active
-      ? `Active — ${src.name} — F8 to hide`
+      ? `Active — ${this.currentZone.name} — F8 to hide`
       : 'Press F8 to toggle';
     mode.style.color = this.placeMode ? '#6f6' : '#8ac';
     mode.textContent = this.placeMode
@@ -859,16 +1296,98 @@ export class ZoneEditor {
       const label = getPropLibraryEntry(a?.model ?? '')?.label ?? a?.model;
       return a ? `asset ${a.id} (${label}) @ (${a.x.toFixed(1)}, ${a.z.toFixed(1)}) scale=${a.scale} rot=${a.rot.toFixed(2)}` : '';
     }
+    if (s.kind === 'authoredTree') {
+      const t = this.props.authoredTrees?.[s.index];
+      const label = t?.kind === 'tree' ? 'pine' : 'oak';
+      return t ? `tree[${s.index}] ${label} @ (${t.x.toFixed(1)}, ${t.z.toFixed(1)}) scale=${(t.scale ?? 1.05).toFixed(2)}` : '';
+    }
+    if (s.kind === 'road') {
+      const road = this.roads[s.index];
+      return road?.length
+        ? `road[${s.index}] ${road.length} points · Del to remove`
+        : '';
+    }
+    if (s.kind === 'lake') {
+      const lake = this.lakes[s.index];
+      return lake
+        ? `lake[${s.index}] @ (${lake.x.toFixed(1)}, ${lake.z.toFixed(1)}) r=${lake.radius.toFixed(1)} · drag to move · Del to remove`
+        : '';
+    }
     return `${s.kind}[${s.index}]`;
   }
 
   exportJson(): ZoneEditorExport {
-    return buildZoneEditorExport(this.zoneId, this.props, this.npcs, this.camps);
+    const exp = this.readExportState();
+    return buildZoneEditorExport(this.zoneId, this.currentZone, exp.props, exp.npcs, exp.camps, exp.roads, exp.lakes);
+  }
+
+  private refreshHydratedTrees(): void {
+    const proc = materializeProceduralTreesForZone(
+      this.currentZone, this.worldSeed, this.explicitAuthoredTrees, this.suppressedTrees,
+    );
+    this.proceduralTreeKeys = proc.keys;
+    this.props.authoredTrees = mergeEditorTrees(this.explicitAuthoredTrees, proc.trees);
+    this.props.suppressedTrees = this.suppressedTrees;
+    this.wireDirty = true;
+    this.meshDirty = true;
+    if (this.standalone) this.treeFoliageDirty = true;
+  }
+
+  private removeAuthoredTree(t: AuthoredTreeDef): void {
+    const key = treeKey(t.x, t.z);
+    if (this.proceduralTreeKeys.has(key)) {
+      this.suppressedTrees = addSuppression(this.suppressedTrees, t.x, t.z);
+      this.proceduralTreeKeys.delete(key);
+    } else {
+      this.explicitAuthoredTrees = removeExplicitTreeAt(this.explicitAuthoredTrees, t.x, t.z);
+    }
+    this.refreshHydratedTrees();
+  }
+
+  private finalizeAuthoredTreeMove(t: AuthoredTreeDef): void {
+    const start = this.dragTreeStart!;
+    if (start.wasProcedural) {
+      this.suppressedTrees = addSuppression(this.suppressedTrees, start.x, start.z);
+      this.proceduralTreeKeys.delete(start.key);
+      this.explicitAuthoredTrees = upsertExplicitTree(this.explicitAuthoredTrees, {
+        x: t.x, z: t.z, kind: t.kind ?? 'tree2', scale: t.scale ?? 1.05,
+      });
+    } else {
+      this.explicitAuthoredTrees = removeExplicitTreeAt(this.explicitAuthoredTrees, start.x, start.z);
+      this.explicitAuthoredTrees = upsertExplicitTree(this.explicitAuthoredTrees, {
+        x: t.x, z: t.z, kind: t.kind ?? 'tree2', scale: t.scale ?? 1.05,
+      });
+    }
+    this.refreshHydratedTrees();
+    this.reselectAuthoredTreeAt(t.x, t.z);
+  }
+
+  private reselectAuthoredTreeAt(x: number, z: number): number {
+    const idx = this.props.authoredTrees?.findIndex((tr) => treeKey(tr.x, tr.z) === treeKey(x, z)) ?? -1;
+    if (idx >= 0) this.sel = { kind: 'authoredTree', index: idx };
+    return idx;
+  }
+
+  private onPointerUp(): void {
+    if (this.dragging && this.sel?.kind === 'authoredTree' && this.dragTreeStart) {
+      const t = this.props.authoredTrees?.[this.sel.index];
+      if (t && Math.hypot(t.x - this.dragTreeStart.x, t.z - this.dragTreeStart.z) > 0.05) {
+        this.finalizeAuthoredTreeMove(t);
+      }
+    }
+    this.dragTreeStart = null;
+    if (this.dragging) this.meshDirty = true;
+    this.dragging = false;
   }
 
   private async copyJson(): Promise<void> {
     const json = JSON.stringify(this.exportJson(), null, 2);
-    const exportFile = ZONE_EDITOR_SOURCES[this.zoneId].exportFile;
+    if (!hasZoneFile(this.zoneId)) {
+      const status = this.panel.querySelector('.ze-status') as HTMLDivElement;
+      status.textContent = 'Export only available for zones with a live content file';
+      return;
+    }
+    const exportFile = ALL_ZONE_SOURCES[this.zoneId].exportFile;
     try {
       await navigator.clipboard.writeText(json);
       const status = this.panel.querySelector('.ze-status') as HTMLDivElement;
@@ -885,7 +1404,7 @@ export class ZoneEditor {
     const blob = new Blob([json], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = ZONE_EDITOR_SOURCES[this.zoneId].exportFile;
+    a.download = hasZoneFile(this.zoneId) ? ALL_ZONE_SOURCES[this.zoneId].exportFile : `${this.zoneId}.json`;
     a.click();
     URL.revokeObjectURL(a.href);
     const status = this.panel.querySelector('.ze-status') as HTMLDivElement;
@@ -908,6 +1427,7 @@ export class ZoneEditor {
       });
       const data = await res.json() as { ok?: boolean; error?: string; zonePath?: string };
       if (!res.ok || !data.ok) throw new Error(data.error ?? `Save failed (${res.status})`);
+      if (!hasZoneFile(this.zoneId)) throw new Error('Only zones with a live content file can be saved from F8 editor');
       status.textContent = `Saved to ${ZONE_EDITOR_SOURCES[this.zoneId].file} — reload page (F5); restart server for collision`;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -925,7 +1445,18 @@ export function createZoneEditor(
   renderer: Renderer,
   world: IWorld,
   offlineSim: Sim | null,
+  opts?: ZoneEditorOptions,
 ): ZoneEditor | null {
   if (!import.meta.env.DEV) return null;
-  return new ZoneEditor(renderer, world, offlineSim);
+  return new ZoneEditor(renderer, world, offlineSim, opts);
+}
+
+/** Map editor — always available in dev builds. */
+export function createMapEditorCore(
+  renderer: Renderer,
+  world: IWorld,
+  offlineSim: Sim | null,
+  opts?: ZoneEditorOptions,
+): ZoneEditor {
+  return new ZoneEditor(renderer, world, offlineSim, { standalone: true, hidePanel: true, ...opts });
 }

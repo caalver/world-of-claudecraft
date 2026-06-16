@@ -8,6 +8,7 @@ import type { BiomeId } from '../sim/types';
 import { generateDecorations, roadDistance, terrainHeight, zoneBiomeAt, WATER_LEVEL } from '../sim/world';
 import type { Decoration } from '../sim/world';
 import { PROPS } from '../sim/data';
+import { filterProceduralDecorations, type SuppressedTreeDef } from '../sim/tree_suppressions';
 import { GFX, sharedUniforms } from './gfx';
 import { grassTuftTexture } from './textures';
 import { loadGltf } from './assets/loader';
@@ -101,6 +102,8 @@ export interface FoliageView {
   group: THREE.Group;
   /** per-frame: grass fade + ring rebuild, fog culling of far tree buckets */
   update(px: number, pz: number, camX: number, camZ: number, fogFar: number): void;
+  /** Map editor: rebuild instanced trees after suppression edits. */
+  rebuildTrees(extraSuppressed?: SuppressedTreeDef[]): void;
 }
 
 // deterministic 0..1 hash on integer grid cells / world coords
@@ -423,20 +426,44 @@ function placeSpecies(
   });
 }
 
-function buildTrees(parent: THREE.Group, seed: number, registry: BucketMesh[]): void {
-  const decos: Decoration[] = [...generateDecorations(seed)];
-  for (const t of PROPS.authoredTrees ?? []) {
-    decos.push({
-      kind: t.kind ?? 'tree2',
-      x: t.x,
-      z: t.z,
-      scale: t.scale ?? 1.1,
-      variant: Math.abs(Math.round(t.x * 3.7 + t.z * 2.1)) % 3,
-      biome: zoneBiomeAt(t.z),
-    });
-  }
+export type AuthoredTreeDef = { x: number; z: number; kind?: 'tree' | 'tree2'; scale?: number };
+
+export function decosFromAuthoredTrees(trees: AuthoredTreeDef[]): Decoration[] {
+  return trees.map((t) => ({
+    kind: t.kind ?? 'tree2',
+    x: t.x,
+    z: t.z,
+    scale: t.scale ?? 1.1,
+    variant: Math.abs(Math.round(t.x * 3.7 + t.z * 2.1)) % 3,
+    biome: zoneBiomeAt(t.z),
+  }));
+}
+
+/** Real 3D tree meshes for map-editor authoredTrees (no procedural field). */
+export function buildAuthoredTreesPreview(trees: AuthoredTreeDef[], seed: number): THREE.Group {
+  const group = new THREE.Group();
+  group.name = 'authored-trees-preview';
+  if (!trees.length) return group;
+  buildTreeMeshesFromDecorations(group, seed, decosFromAuthoredTrees(trees), () => {});
+  return group;
+}
+
+function buildTreeMeshesFromDecorations(
+  parent: THREE.Group,
+  seed: number,
+  decos: Decoration[],
+  onMesh: (
+    mesh: THREE.InstancedMesh,
+    bx: number,
+    bz: number,
+    bRadius: number,
+    minDist?: number,
+    maxDist?: number,
+  ) => void,
+): void {
   const buckets = new Map<string, Bucket>();
   for (const d of decos) {
+    if (d.kind !== 'tree' && d.kind !== 'tree2') continue;
     const col = d.x < 0 ? 0 : 1;
     const band = Math.floor((d.z - WORLD_MIN_Z) / BUCKET_DEPTH);
     const key = `${band}:${col}`;
@@ -476,13 +503,66 @@ function buildTrees(parent: THREE.Group, seed: number, registry: BucketMesh[]): 
     leafTint: TRUNK_TINT.marsh, castBarkShadow: true,
   };
 
-  // rocks: 3 single variants + a merged 3-boulder cluster, each in a mossy-top
-  // and a snow-dusted colorway (baked vertex colors over the rock texture)
+  for (const bucket of buckets.values()) {
+    const { items } = bucket;
+    const pines = items.filter((d) => d.kind === 'tree');
+    const oaks = items.filter((d) => d.kind === 'tree2' && d.biome !== 'marsh');
+    const swamps = items.filter((d) => d.kind === 'tree2' && d.biome === 'marsh');
+    const twisteds = swamps.filter((d) => hashAt(d.x, d.z, 19) >= 0.35);
+    const deads = swamps.filter((d) => hashAt(d.x, d.z, 19) < 0.35);
+
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const d of items) {
+      minX = Math.min(minX, d.x);
+      maxX = Math.max(maxX, d.x);
+      minZ = Math.min(minZ, d.z);
+      maxZ = Math.max(maxZ, d.z);
+    }
+    const bx = (minX + maxX) / 2, bz = (minZ + maxZ) / 2;
+    const bRadius = Math.hypot(maxX - minX, maxZ - minZ) / 2 + 18;
+    const register = (mesh: THREE.InstancedMesh, minDist?: number, maxDist?: number): void => {
+      onMesh(mesh, bx, bz, bRadius, minDist, maxDist);
+    };
+
+    placeSpecies(parent, seed, bucket, pines, pineSpec, register);
+    placeSpecies(parent, seed, bucket, oaks, oakSpec, register);
+    placeSpecies(parent, seed, bucket, twisteds, twistedSpec, register);
+    placeSpecies(parent, seed, bucket, deads, deadSpec, register);
+  }
+}
+
+function buildTrees(
+  parent: THREE.Group,
+  seed: number,
+  registry: BucketMesh[],
+  omitAuthoredTrees = false,
+  extraSuppressed: SuppressedTreeDef[] = [],
+): void {
+  const decos: Decoration[] = filterProceduralDecorations(
+    [...generateDecorations(seed)],
+    [...(PROPS.suppressedTrees ?? []), ...extraSuppressed],
+  );
+  if (!omitAuthoredTrees) {
+    decos.push(...decosFromAuthoredTrees(PROPS.authoredTrees ?? []));
+  }
+  buildTreeMeshesFromDecorations(parent, seed, decos, (mesh, bx, bz, bRadius, minDist, maxDist) => {
+    registry.push({ mesh, x: bx, z: bz, radius: bRadius, minDist, maxDist });
+  });
+
+  const buckets = new Map<string, Bucket>();
+  for (const d of decos) {
+    const col = d.x < 0 ? 0 : 1;
+    const band = Math.floor((d.z - WORLD_MIN_Z) / BUCKET_DEPTH);
+    const key = `${band}:${col}`;
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = { band, col, items: [] };
+      buckets.set(key, bucket);
+    }
+    bucket.items.push(d);
+  }
+
   const rockParts = MODEL_URLS.rock.map(extractParts);
-  // source rock GLBs ship no COLOR_0, so the cached material resolves with
-  // vertexColors:false — but every rock geometry below goes through
-  // bakeTopTint (moss/snow vertex colors). Clone with vertexColors on, or
-  // the colorways are inert. (Safe to clone: rocks take no wind hook.)
   const rockMat = (rockParts[0][0].material as THREE.MeshStandardMaterial).clone();
   rockMat.vertexColors = true;
   const colorway = (tint: THREE.Color): THREE.BufferGeometry[] => {
@@ -496,40 +576,27 @@ function buildTrees(parent: THREE.Group, seed: number, registry: BucketMesh[]): 
       member(1, 0.95, -0.12, 0.45, 1.4, 0.62),
       member(2, 0.2, 0.6, -0.35, 2.4, 0.48),
     ]);
-    return [...singles, cluster]; // [single x3, cluster]
+    return [...singles, cluster];
   };
   const mossRocks = colorway(new THREE.Color(0.62, 0.82, 0.45));
   const snowRocks = colorway(new THREE.Color(1.5, 1.55, 1.65));
 
   for (const bucket of buckets.values()) {
     const { items } = bucket;
-    const pines = items.filter((d) => d.kind === 'tree');
-    const oaks = items.filter((d) => d.kind === 'tree2' && d.biome !== 'marsh');
-    const swamps = items.filter((d) => d.kind === 'tree2' && d.biome === 'marsh');
-    // marsh swamp trees split between twisted (mossy) and dead (bare) models
-    const twisteds = swamps.filter((d) => hashAt(d.x, d.z, 19) >= 0.35);
-    const deads = swamps.filter((d) => hashAt(d.x, d.z, 19) < 0.35);
     const rocks = items.filter((d) => d.kind === 'rock');
-
-    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-    for (const d of items) {
-      minX = Math.min(minX, d.x);
-      maxX = Math.max(maxX, d.x);
-      minZ = Math.min(minZ, d.z);
-      maxZ = Math.max(maxZ, d.z);
-    }
-    const bx = (minX + maxX) / 2, bz = (minZ + maxZ) / 2;
-    const bRadius = Math.hypot(maxX - minX, maxZ - minZ) / 2 + 18; // canopy margin
-    const register = (mesh: THREE.InstancedMesh, minDist?: number, maxDist?: number): void => {
-      registry.push({ mesh, x: bx, z: bz, radius: bRadius, minDist, maxDist });
-    };
-
-    placeSpecies(parent, seed, bucket, pines, pineSpec, register);
-    placeSpecies(parent, seed, bucket, oaks, oakSpec, register);
-    placeSpecies(parent, seed, bucket, twisteds, twistedSpec, register);
-    placeSpecies(parent, seed, bucket, deads, deadSpec, register);
-
     if (rocks.length > 0) {
+      let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+      for (const d of rocks) {
+        minX = Math.min(minX, d.x);
+        maxX = Math.max(maxX, d.x);
+        minZ = Math.min(minZ, d.z);
+        maxZ = Math.max(maxZ, d.z);
+      }
+      const bx = (minX + maxX) / 2, bz = (minZ + maxZ) / 2;
+      const bRadius = Math.hypot(maxX - minX, maxZ - minZ) / 2 + 18;
+      const register = (mesh: THREE.InstancedMesh, minDist?: number, maxDist?: number): void => {
+        registry.push({ mesh, x: bx, z: bz, radius: bRadius, minDist, maxDist });
+      };
       const isCluster = (r: Decoration): boolean => hashAt(r.x, r.z, 7) > 0.72;
       const isSnowy = (r: Decoration): boolean =>
         r.biome === 'peaks' && terrainHeight(r.x, r.z, seed) > ROCK_SNOWLINE_Y;
@@ -856,15 +923,33 @@ function buildGrassRing(parent: THREE.Group, seed: number): GrassRing {
 // Entry point
 // ---------------------------------------------------------------------------
 
-export function buildFoliage(seed: number): FoliageView {
+export interface BuildFoliageOptions {
+  /** Map editor: authored trees come from the zone-editor preview instead. */
+  omitAuthoredTrees?: boolean;
+}
+
+export function buildFoliage(seed: number, opts: BuildFoliageOptions = {}): FoliageView {
   const group = new THREE.Group();
   group.name = 'foliage';
   const bucketMeshes: BucketMesh[] = [];
-  buildTrees(group, seed, bucketMeshes);
+  const omitAuthored = opts.omitAuthoredTrees ?? false;
+  const rebuildTrees = (extraSuppressed: SuppressedTreeDef[] = []): void => {
+    for (const b of bucketMeshes) {
+      group.remove(b.mesh);
+      b.mesh.geometry?.dispose();
+      const mat = b.mesh.material;
+      if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+      else mat?.dispose();
+    }
+    bucketMeshes.length = 0;
+    buildTrees(group, seed, bucketMeshes, omitAuthored, extraSuppressed);
+  };
+  rebuildTrees();
   buildDressing(group, seed, bucketMeshes);
   const grass = buildGrassRing(group, seed);
   return {
     group,
+    rebuildTrees,
     update(px: number, pz: number, camX: number, camZ: number, fogFar: number): void {
       grass.update(px, pz);
       // buckets fully behind the fog wall are pure overdraw; the optional

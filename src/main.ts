@@ -2035,6 +2035,7 @@ function wireStartScreens(): void {
   const navBtnWiki = $('#nav-btn-wiki');
   const navBtnNews = $('#nav-btn-news');
   const navBtnDownload = $('#nav-btn-download');
+  const navBtnMapEditor = $('#nav-btn-map-editor');
   const navBtnLogin = $('#nav-btn-login');
 
   const deleteConfirmInput = $('#delete-character-confirm') as HTMLInputElement;
@@ -2110,6 +2111,9 @@ function wireStartScreens(): void {
   setupNavBtn(navBtnWiki, '#wiki-view');
   setupNavBtn(navBtnNews, '#news-view');
   setupNavBtn(navBtnDownload, '#download-view');
+  setupNavBtn(navBtnMapEditor, '#hero-view', () => {
+    window.location.href = '/editor.html';
+  });
   setupNavBtn(navBtnLogin, '#hero-view', () => {
     show('#login-panel');
   });

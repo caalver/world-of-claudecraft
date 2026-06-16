@@ -301,6 +301,9 @@ export interface ZoneDef {
   name: string;
   zMin: number;
   zMax: number;
+  /** When both set, zone is a rectangular pocket (e.g. Aldermere city) instead of a full strip band. */
+  xMin?: number;
+  xMax?: number;
   levelRange: [number, number];
   biome: BiomeId;
   hub: { x: number; z: number; radius: number; name: string };
@@ -368,6 +371,8 @@ export interface ZonePropsDef {
   placedAssets: PlacedAssetDef[];
   /** Fixed tree placements (boulevards, parks) — merged into foliage at build time. */
   authoredTrees?: { x: number; z: number; kind?: 'tree' | 'tree2'; scale?: number }[];
+  /** Procedural tree slots removed by the map editor (exact world positions). */
+  suppressedTrees?: { x: number; z: number }[];
 }
 
 export function emptyZoneProps(): ZonePropsDef {
@@ -376,6 +381,7 @@ export function emptyZoneProps(): ZonePropsDef {
     crates: [], campfires: [], mudHuts: [], ruinRings: [], fences: [], graveyards: [],
     placedAssets: [],
     authoredTrees: [],
+    suppressedTrees: [],
   };
 }
 

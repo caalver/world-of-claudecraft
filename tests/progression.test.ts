@@ -3,6 +3,7 @@
 // forced grinding. These tests are content-shape tests — they run against
 // whatever the content modules currently export, so they hold as zones grow.
 import { describe, expect, it } from 'vitest';
+import { stripZoneBands, zoneAtPosition } from '../src/sim/zone_bounds';
 import {
   CAMPS, CLASSES, ABILITIES, DUNGEON_LIST, GROUND_OBJECTS, ITEMS, MOBS, NPCS,
   QUESTS, QUEST_ORDER, REWARD_ARCHETYPE, ROADS, ZONES,
@@ -97,8 +98,12 @@ describe('content referential integrity', () => {
   });
 
   it('zones tile the world strip and content sits inside its zone band', () => {
-    for (let i = 0; i + 1 < ZONES.length; i++) {
-      expect(ZONES[i].zMax).toBe(ZONES[i + 1].zMin);
+    const stripZones = stripZoneBands(ZONES);
+    expect(WORLD_MAX_Z).toBe(Math.max(...stripZones.map((z) => z.zMax)));
+    expect(WORLD_MIN_Z).toBe(Math.min(...stripZones.map((z) => z.zMin)));
+    expect(WORLD_MAX_Z).toBeGreaterThanOrEqual(900);
+    for (let i = 0; i + 1 < stripZones.length; i++) {
+      expect(stripZones[i].zMax).toBe(stripZones[i + 1].zMin);
     }
     const problems: string[] = [];
     const inWorld = inOverworldBounds;
@@ -187,7 +192,7 @@ describe('xp pacing budget (no forced grinding)', () => {
     let xp = 0, killXp = 0, count = 0;
     for (const q of Object.values(QUESTS)) {
       const giver = NPCS[q.giverNpcId];
-      if (!giver || giver.pos.z < zone.zMin || giver.pos.z >= zone.zMax) continue;
+      if (!giver || zoneAtPosition(giver.pos.x, giver.pos.z, ZONES).id !== zone.id) continue;
       count++;
       xp += q.xpReward;
       for (const obj of q.objectives) {

@@ -34,8 +34,7 @@ export const ZONE2_ZONE: ZoneDef = {
     { x: 172, z: 432, label: 'Ironspine Pass' },
     { x: 320, z: 465, label: 'Aldermere' },
     { x: 388, z: 512, label: 'Mirrorfen Basin' },
-  ],
-  settlements: [{ x: 320, z: 465, radius: 78, name: 'Aldermere' }],
+  ],
   welcome: 'Report to Warden Fenwick at the Fenbridge gate.',
 };
 
@@ -759,81 +758,6 @@ export const ZONE2_ITEMS: Record<string, ItemDef> = {
 };
 
 // ---------------------------------------------------------------------------
-// Aldermere — enlarged city in the eastern protrusion (~5× original footprint).
-// ---------------------------------------------------------------------------
-
-const ALD_S = 2.236;
-const ALD_CX = 320;
-const ALD_CZ = 465;
-const ald = (x: number, z: number) => ({ x: ALD_CX + (x - 238) * ALD_S, z: ALD_CZ + (z - 420) * ALD_S });
-
-function aldermereBoulevardTrees(): NonNullable<ZonePropsDef['authoredTrees']> {
-  const pts = [
-    { x: 172, z: 433 }, { x: 186, z: 434 }, { x: 202, z: 435 }, { x: 220, z: 436 },
-    { x: 240, z: 438 }, { x: 262, z: 440 }, { x: 282, z: 443 }, { x: 298, z: 447 },
-    { x: 310, z: 452 }, { x: 316, z: 458 }, { x: 318, z: 464 }, { x: 320, z: 470 },
-  ];
-  const out: NonNullable<ZonePropsDef['authoredTrees']> = [];
-  const spacing = 6.5;
-  const rowOff = 8.2;
-  for (let i = 0; i + 1 < pts.length; i++) {
-    const a = pts[i], b = pts[i + 1];
-    const dx = b.x - a.x, dz = b.z - a.z;
-    const len = Math.hypot(dx, dz);
-    if (len < 1e-3) continue;
-    const steps = Math.max(1, Math.ceil(len / spacing));
-    const px = -dz / len * rowOff, pz = dx / len * rowOff;
-    for (let s = 0; s <= steps; s++) {
-      const t = s / steps;
-      const x = a.x + dx * t, z = a.z + dz * t;
-      const jitter = ((s * 17 + i * 31) % 10) * 0.08;
-      out.push({ x: x + px + jitter, z: z + pz, kind: 'tree2', scale: 1.05 + (s % 3) * 0.08 });
-      out.push({ x: x - px - jitter, z: z - pz, kind: 'tree2', scale: 1.0 + (s % 2) * 0.1 });
-    }
-  }
-  return out;
-}
-
-function aldermereBuildings(): BuildingDef[] {
-  const core: BuildingDef[] = [
-    { kind: 'inn', ...ald(238, 448), w: 12, d: 14, rot: 2.4 },
-    { kind: 'chapel', ...ald(212, 420), w: 12.5, d: 14, rot: 1.38 },
-    { kind: 'house', prop: 'blacksmith', ...ald(268, 414), w: 12, d: 10, rot: -0.5 },
-    { kind: 'house', prop: 'house2', ...ald(220, 432), w: 14, d: 12, rot: 0.5 },
-    { kind: 'house', prop: 'house2', ...ald(256, 432), w: 12, d: 10, rot: -0.4 },
-    { kind: 'house', prop: 'house2', ...ald(220, 408), w: 12, d: 10, rot: 1.1 },
-    { kind: 'house', prop: 'house2', ...ald(256, 408), w: 12, d: 10, rot: 2.0 },
-    { kind: 'house', prop: 'house2', ...ald(225, 454), w: 12, d: 10, rot: -2.2 },
-    { kind: 'house', prop: 'house2', ...ald(251, 454), w: 12, d: 10, rot: 2.6 },
-    { kind: 'house', prop: 'house2', ...ald(208, 420), w: 12, d: 10, rot: 0.8 },
-    { kind: 'house', prop: 'house2', ...ald(268, 428), w: 12, d: 10, rot: -1.4 },
-    { kind: 'house', prop: 'house2', ...ald(238, 392), w: 14, d: 12, rot: 0.2 },
-    { kind: 'house', prop: 'house2', ...ald(210, 400), w: 12, d: 10, rot: 1.6 },
-    { kind: 'house', prop: 'house2', ...ald(266, 400), w: 12, d: 10, rot: -0.9 },
-    { kind: 'house', prop: 'house2', ...ald(198, 432), w: 12, d: 10, rot: 2.3 },
-    { kind: 'house', prop: 'house2', ...ald(278, 418), w: 12, d: 10, rot: -2.5 },
-    { kind: 'house', prop: 'house2', ...ald(222, 378), w: 12, d: 10, rot: 0.6 },
-    { kind: 'house', prop: 'house2', ...ald(254, 378), w: 12, d: 10, rot: -1.8 },
-  ];
-  const extra: BuildingDef[] = [];
-  const rots = [0.3, 0.9, 1.5, -0.6, 2.1, -1.3, 0.5, -2.0, 1.1, 2.7, -0.4, 1.8];
-  let ri = 0;
-  for (const z of [378, 408, 538, 568]) {
-    for (const x of [248, 278, 308, 338, 368, 398]) {
-      if (x >= 272 && x <= 368 && z >= 418 && z <= 512) continue;
-      if (x >= 350 && z >= 488) continue; // lake shore
-      extra.push({
-        kind: 'house',
-        prop: ri % 3 === 0 ? 'house2' : 'house2',
-        x, z, w: ri % 5 === 0 ? 14 : 12, d: ri % 4 === 0 ? 12 : 10,
-        rot: rots[ri++ % rots.length],
-      });
-    }
-  }
-  return [...core, ...extra];
-}
-
-// ---------------------------------------------------------------------------
 // Static props (rendering + collision share this placement data)
 // ---------------------------------------------------------------------------
 
@@ -844,62 +768,13 @@ export const ZONE2_PROPS: ZonePropsDef = {
     { kind: 'house', prop: 'house2', x: -13, z: 308, w: 14, d: 12, rot: 0.5 },
     { kind: 'house', prop: 'house2', x: -12, z: 291, w: 12, d: 10, rot: 2.6 },
     { kind: 'house', prop: 'house2', x: 14, z: 322, w: 12, d: 10, rot: 0.3 },
-    { kind: 'inn', x: 320, z: 527.608, w: 12, d: 14, rot: 2.4 },
-    { kind: 'chapel', x: 261.864, z: 465, w: 12.5, d: 14, rot: 1.38 },
-    { kind: 'house', prop: 'blacksmith', x: 387.08, z: 451.584, w: 12, d: 10, rot: -0.5 },
-    { kind: 'house', prop: 'house2', x: 279.752, z: 491.832, w: 14, d: 12, rot: 0.5 },
-    { kind: 'house', prop: 'house2', x: 360.248, z: 491.832, w: 12, d: 10, rot: -0.4 },
-    { kind: 'house', prop: 'house2', x: 360.248, z: 438.168, w: 12, d: 10, rot: 2 },
-    { kind: 'house', prop: 'house2', x: 290.932, z: 541.024, w: 12, d: 10, rot: -2.2 },
-    { kind: 'house', prop: 'house2', x: 349.068, z: 541.024, w: 12, d: 10, rot: 2.6 },
-    { kind: 'house', prop: 'house2', x: 252.92, z: 465, w: 12, d: 10, rot: 0.8 },
-    { kind: 'house', prop: 'house2', x: 387.08, z: 482.888, w: 12, d: 10, rot: -1.4 },
-    { kind: 'house', prop: 'house2', x: 320, z: 402.392, w: 14, d: 12, rot: 0.2 },
-    { kind: 'house', prop: 'house2', x: 257.392, z: 420.28, w: 12, d: 10, rot: 1.6 },
-    { kind: 'house', prop: 'house2', x: 382.608, z: 420.28, w: 12, d: 10, rot: -0.9 },
-    { kind: 'house', prop: 'house2', x: 230.56, z: 491.832, w: 12, d: 10, rot: 2.3 },
-    { kind: 'house', prop: 'house2', x: 409.44, z: 460.528, w: 12, d: 10, rot: -2.5 },
-    { kind: 'house', prop: 'house2', x: 284.224, z: 371.088, w: 12, d: 10, rot: 0.6 },
-    { kind: 'house', prop: 'house2', x: 355.776, z: 371.088, w: 12, d: 10, rot: -1.8 },
-    { kind: 'house', prop: 'house2', x: 248, z: 378, w: 14, d: 12, rot: 0.3 },
-    { kind: 'house', prop: 'house2', x: 278, z: 378, w: 12, d: 10, rot: 0.9 },
-    { kind: 'house', prop: 'house2', x: 308, z: 378, w: 12, d: 10, rot: 1.5 },
-    { kind: 'house', prop: 'house2', x: 338, z: 378, w: 12, d: 10, rot: -0.6 },
-    { kind: 'house', prop: 'house2', x: 368, z: 378, w: 12, d: 12, rot: 2.1 },
-    { kind: 'house', prop: 'house2', x: 398, z: 378, w: 14, d: 10, rot: -1.3 },
-    { kind: 'house', prop: 'house2', x: 248, z: 408, w: 12, d: 10, rot: 0.5 },
-    { kind: 'house', prop: 'house2', x: 278, z: 408, w: 12, d: 10, rot: -2 },
-    { kind: 'house', prop: 'house2', x: 308, z: 408, w: 12, d: 12, rot: 1.1 },
-    { kind: 'house', prop: 'house2', x: 338, z: 408, w: 12, d: 10, rot: 2.7 },
-    { kind: 'house', prop: 'house2', x: 368, z: 408, w: 14, d: 10, rot: -0.4 },
-    { kind: 'house', prop: 'house2', x: 398, z: 408, w: 12, d: 10, rot: 1.8 },
-    { kind: 'house', prop: 'house2', x: 248, z: 538, w: 12, d: 12, rot: 0.3 },
-    { kind: 'house', prop: 'house2', x: 278, z: 538, w: 12, d: 10, rot: 0.9 },
-    { kind: 'house', prop: 'house2', x: 308, z: 538, w: 12, d: 10, rot: 1.5 },
-    { kind: 'house', prop: 'house2', x: 338, z: 538, w: 14, d: 10, rot: -0.6 },
-    { kind: 'house', prop: 'house2', x: 248, z: 568, w: 12, d: 12, rot: 2.1 },
-    { kind: 'house', prop: 'house2', x: 278, z: 568, w: 12, d: 10, rot: -1.3 },
-    { kind: 'house', prop: 'house2', x: 308, z: 568, w: 12, d: 10, rot: 0.5 },
-    { kind: 'house', prop: 'house2', x: 338, z: 568, w: 12, d: 10, rot: -2 },
   ],
-  wells: [{ x: 0, z: 302, r: 1.5 }, { x: 320, z: 458, r: 1.5 }],
+  wells: [{ x: 0, z: 302, r: 1.5 }],
   stalls: [
     { x: -5, z: 310.5, rot: 1.571, r: 1.7 },
-    { x: 292, z: 442, rot: 0.2, r: 1.8 },
-    { x: 348, z: 442, rot: -0.5, r: 1.8 },
-    { x: 320, z: 428, rot: 3.142, r: 1.8 },
-    { x: 292, z: 488, rot: 1.1, r: 1.8 },
-    { x: 348, z: 488, rot: -1.3, r: 1.8 },
-    { x: 320, z: 502, rot: 0.6, r: 1.8 },
-    { x: 306, z: 465, rot: 0.8, r: 1.8 },
-    { x: 334, z: 465, rot: -0.7, r: 1.8 },
-    { x: 320, z: 452, rot: 1.4, r: 1.8 },
-    { x: 320, z: 478, rot: -2.1, r: 1.8 },
-    { x: 278, z: 465, rot: 2.5, r: 1.8 },
-    { x: 362, z: 465, rot: -1.9, r: 1.8 },
   ],
   mines: [],
-  docks: [{ x: -66, z: 305, rot: 1.68, hutLocal: { x: 2.8, z: 2.4, hw: 1.7, hd: 1.5 } }, { x: 418, z: 528, rot: -0.4, hutLocal: { x: 2.8, z: 2.4, hw: 1.7, hd: 1.5 } }],
+  docks: [{ x: -66, z: 305, rot: 1.68, hutLocal: { x: 2.8, z: 2.4, hw: 1.7, hd: 1.5 } }],
   tents: [
     { x: 12, z: 474, rot: 0.5, scale: 1 },
     { x: 20, z: 466, rot: 2.1, scale: 1 },
@@ -907,104 +782,18 @@ export const ZONE2_PROPS: ZonePropsDef = {
     { x: -28, z: 494, rot: -0.7, scale: 1 },
     { x: -3, z: 505, rot: 2.9, scale: 1.3 },
   ],
-  crates: [[14, 468], [18, 471], [-23, 491], [2, 504], [298, 448], [320, 458], [342, 448], [308, 472], [332, 482], [320, 492]],
-  campfires: [[4, 299], [-2, 293], [16, 470], [-25, 489], [0, 506], [278, 432], [362, 432], [278, 498], [362, 498]],
+  crates: [[14, 468], [18, 471], [-23, 491], [2, 504]],
+  campfires: [[4, 299], [-2, 293], [16, 470], [-25, 489], [0, 506]],
   mudHuts: [[-78, 269], [-83, 266], [-74, 275], [-117, 346], [-123, 354]],
   ruinRings: [{ x: 100, z: 435, ringR: 7, columns: 7 }],
   fences: [
     { x1: 16, z1: 311, x2: 21, z2: 299 },
     { x1: -18, z1: 313, x2: -22, z2: 300 },
-    { x1: 274.496, z1: 430.573, x2: 362.496, z2: 430.573 },
-    { x1: 276.026, z1: 511.754, x2: 364.026, z2: 511.754 },
-    { x1: 274.605, z1: 449.009, x2: 274.605, z2: 543.009 },
-    { x1: 364, z1: 418, x2: 364, z2: 512 },
   ],
   graveyards: [{ x: -18, z: 286 }],
   placedAssets: [
   ],
-  authoredTrees: [
-    { x: 171.416, z: 441.179, kind: 'tree2', scale: 1.05 },
-    { x: 172.584, z: 424.821, kind: 'tree2', scale: 1 },
-    { x: 176.642, z: 441.512, kind: 'tree2', scale: 1.13 },
-    { x: 176.691, z: 425.154, kind: 'tree2', scale: 1.1 },
-    { x: 181.069, z: 441.846, kind: 'tree2', scale: 1.21 },
-    { x: 181.598, z: 425.488, kind: 'tree2', scale: 1 },
-    { x: 185.496, z: 442.179, kind: 'tree2', scale: 1.05 },
-    { x: 186.504, z: 425.821, kind: 'tree2', scale: 1.1 },
-    { x: 185.568, z: 442.184, kind: 'tree2', scale: 1.05 },
-    { x: 186.432, z: 425.816, kind: 'tree2', scale: 1 },
-    { x: 191.462, z: 442.517, kind: 'tree2', scale: 1.13 },
-    { x: 191.205, z: 426.149, kind: 'tree2', scale: 1.1 },
-    { x: 196.555, z: 442.851, kind: 'tree2', scale: 1.21 },
-    { x: 196.778, z: 426.483, kind: 'tree2', scale: 1 },
-    { x: 201.648, z: 443.184, kind: 'tree2', scale: 1.05 },
-    { x: 202.352, z: 426.816, kind: 'tree2', scale: 1.1 },
-    { x: 201.705, z: 443.187, kind: 'tree2', scale: 1.05 },
-    { x: 202.295, z: 426.813, kind: 'tree2', scale: 1 },
-    { x: 208.265, z: 443.521, kind: 'tree2', scale: 1.13 },
-    { x: 207.735, z: 427.146, kind: 'tree2', scale: 1.1 },
-    { x: 214.025, z: 443.854, kind: 'tree2', scale: 1.21 },
-    { x: 213.975, z: 427.479, kind: 'tree2', scale: 1 },
-    { x: 219.785, z: 444.187, kind: 'tree2', scale: 1.05 },
-    { x: 220.215, z: 427.813, kind: 'tree2', scale: 1.1 },
-    { x: 219.424, z: 444.159, kind: 'tree2', scale: 1.05 },
-    { x: 220.576, z: 427.841, kind: 'tree2', scale: 1 },
-    { x: 224.184, z: 444.659, kind: 'tree2', scale: 1.13 },
-    { x: 225.816, z: 428.341, kind: 'tree2', scale: 1.1 },
-    { x: 229.744, z: 445.159, kind: 'tree2', scale: 1.21 },
-    { x: 230.256, z: 428.841, kind: 'tree2', scale: 1 },
-    { x: 234.504, z: 445.659, kind: 'tree2', scale: 1.05 },
-    { x: 235.496, z: 429.341, kind: 'tree2', scale: 1.1 },
-    { x: 239.264, z: 446.159, kind: 'tree2', scale: 1.13 },
-    { x: 240.736, z: 429.841, kind: 'tree2', scale: 1 },
-    { x: 239.578, z: 446.166, kind: 'tree2', scale: 1.05 },
-    { x: 240.422, z: 429.834, kind: 'tree2', scale: 1 },
-    { x: 244.838, z: 446.666, kind: 'tree2', scale: 1.13 },
-    { x: 246.162, z: 430.334, kind: 'tree2', scale: 1.1 },
-    { x: 250.898, z: 447.166, kind: 'tree2', scale: 1.21 },
-    { x: 251.102, z: 430.834, kind: 'tree2', scale: 1 },
-    { x: 256.158, z: 447.666, kind: 'tree2', scale: 1.05 },
-    { x: 256.842, z: 431.334, kind: 'tree2', scale: 1.1 },
-    { x: 261.418, z: 448.166, kind: 'tree2', scale: 1.13 },
-    { x: 262.582, z: 431.834, kind: 'tree2', scale: 1 },
-    { x: 261.184, z: 448.109, kind: 'tree2', scale: 1.05 },
-    { x: 262.816, z: 431.891, kind: 'tree2', scale: 1 },
-    { x: 265.944, z: 448.859, kind: 'tree2', scale: 1.13 },
-    { x: 268.056, z: 432.641, kind: 'tree2', scale: 1.1 },
-    { x: 271.504, z: 449.609, kind: 'tree2', scale: 1.21 },
-    { x: 272.496, z: 433.391, kind: 'tree2', scale: 1 },
-    { x: 276.264, z: 450.359, kind: 'tree2', scale: 1.05 },
-    { x: 277.736, z: 434.141, kind: 'tree2', scale: 1.1 },
-    { x: 281.024, z: 451.109, kind: 'tree2', scale: 1.13 },
-    { x: 282.976, z: 434.891, kind: 'tree2', scale: 1 },
-    { x: 280.491, z: 450.955, kind: 'tree2', scale: 1.05 },
-    { x: 283.509, z: 435.045, kind: 'tree2', scale: 1 },
-    { x: 285.585, z: 452.289, kind: 'tree2', scale: 1.13 },
-    { x: 289.082, z: 436.378, kind: 'tree2', scale: 1.1 },
-    { x: 290.678, z: 453.622, kind: 'tree2', scale: 1.21 },
-    { x: 294.655, z: 437.711, kind: 'tree2', scale: 1 },
-    { x: 296.571, z: 454.955, kind: 'tree2', scale: 1.05 },
-    { x: 299.429, z: 439.045, kind: 'tree2', scale: 1.1 },
-    { x: 295.406, z: 454.569, kind: 'tree2', scale: 1.05 },
-    { x: 300.594, z: 439.431, kind: 'tree2', scale: 1 },
-    { x: 301.166, z: 457.069, kind: 'tree2', scale: 1.13 },
-    { x: 306.834, z: 441.931, kind: 'tree2', scale: 1.1 },
-    { x: 306.926, z: 459.569, kind: 'tree2', scale: 1.21 },
-    { x: 313.074, z: 444.431, kind: 'tree2', scale: 1 },
-    { x: 304.842, z: 457.798, kind: 'tree2', scale: 1.05 },
-    { x: 315.158, z: 446.202, kind: 'tree2', scale: 1 },
-    { x: 307.602, z: 460.798, kind: 'tree2', scale: 1.13 },
-    { x: 318.398, z: 449.202, kind: 'tree2', scale: 1.1 },
-    { x: 310.362, z: 463.798, kind: 'tree2', scale: 1.21 },
-    { x: 321.638, z: 452.202, kind: 'tree2', scale: 1 },
-    { x: 308.941, z: 460.593, kind: 'tree2', scale: 1.05 },
-    { x: 323.059, z: 455.407, kind: 'tree2', scale: 1 },
-    { x: 310.701, z: 466.593, kind: 'tree2', scale: 1.13 },
-    { x: 325.299, z: 461.407, kind: 'tree2', scale: 1.1 },
-    { x: 310.221, z: 466.593, kind: 'tree2', scale: 1.05 },
-    { x: 325.779, z: 461.407, kind: 'tree2', scale: 1 },
-    { x: 312.781, z: 472.593, kind: 'tree2', scale: 1.13 },
-    { x: 327.219, z: 467.407, kind: 'tree2', scale: 1.1 },
-  ],
+  authoredTrees: [],
+  suppressedTrees: [],
 };
 // @zone-editor-end ZONE2_PROPS

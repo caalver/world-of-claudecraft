@@ -11,10 +11,7 @@ import type { BiomeId } from '../sim/types';
 import { AnimState, CharacterVisual, createCharacterVisual } from './characters';
 import { LocoTrack, newLocoTrack, updateLocomotion } from './locomotion';
 import { buildProps } from './props';
-import { ZONE1_PROPS } from '../sim/content/zone1';
-import { ZONE2_PROPS } from '../sim/content/zone2';
-import { ZONE3_PROPS } from '../sim/content/zone3';
-import type { EditorZoneId } from '../dev/zone_editor_zones';
+import { worldZonePropSets, type EditorZoneId } from '../dev/zone_editor_zones';
 import { plankTexture, sparkleTexture } from './textures';
 import { DungeonInteriors } from './dungeon';
 import { Vfx } from './vfx';
@@ -26,6 +23,7 @@ import { buildTerrain, TerrainView } from './terrain';
 import { buildWater, WaterView } from './water';
 import { buildClouds, buildSky, SkyView } from './sky';
 import { buildFoliage, FoliageView } from './foliage';
+import type { SuppressedTreeDef } from '../sim/tree_suppressions';
 import { shouldRenderStealthGhost } from './stealth';
 import { raidMarkerDataUrl } from '../ui/icons';
 
@@ -164,7 +162,12 @@ export class Renderer {
   private godRays: THREE.Sprite[] = [];
   private viewport = { width: 1, height: 1 };
 
-  constructor(private sim: IWorld, canvas: HTMLCanvasElement, nameplateLayer: HTMLDivElement) {
+  constructor(
+    private sim: IWorld,
+    canvas: HTMLCanvasElement,
+    nameplateLayer: HTMLDivElement,
+    opts?: { omitAuthoredTrees?: boolean },
+  ) {
     this.nameplateLayer = nameplateLayer;
     // No default-framebuffer MSAA on any tier: high/ultra get AA from the
     // composer's MSAA HalfFloat target, low is meant to run without AA — and
@@ -322,13 +325,9 @@ export class Renderer {
     this.waterView = buildWater(this.sim.cfg.seed);
     for (const mesh of this.waterView.meshes) this.scene.add(mesh);
 
-    this.foliage = buildFoliage(this.sim.cfg.seed);
+    this.foliage = buildFoliage(this.sim.cfg.seed, { omitAuthoredTrees: opts?.omitAuthoredTrees });
     this.scene.add(this.foliage.group);
-    const zonePropSets: { id: EditorZoneId; props: typeof ZONE1_PROPS }[] = [
-      { id: 'eastbrook_vale', props: ZONE1_PROPS },
-      { id: 'mirefen_marsh', props: ZONE2_PROPS },
-      { id: 'thornpeak_heights', props: ZONE3_PROPS },
-    ];
+    const zonePropSets = worldZonePropSets() as { id: EditorZoneId; props: Parameters<typeof buildProps>[1] }[];
     const propsViews: ReturnType<typeof buildProps>[] = [];
     this.worldPropsGroup = new THREE.Group();
     this.worldPropsGroup.name = 'world-props';
@@ -803,6 +802,11 @@ export class Renderer {
       if (v.portal) (v.portal.material as THREE.Material).dispose();
     }
     this.views.delete(id);
+  }
+
+  /** Map editor: refresh instanced procedural trees after suppression edits. */
+  rebuildFoliageTrees(extraSuppressed: SuppressedTreeDef[] = []): void {
+    this.foliage.rebuildTrees(extraSuppressed);
   }
 
   sync(alpha: number, dt: number, renderFacingOverride: number | null): void {

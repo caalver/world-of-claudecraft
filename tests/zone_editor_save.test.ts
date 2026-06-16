@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { saveZoneEditorExport } from '../scripts/zone_editor_save.mjs';
 import { buildZoneEditorExport } from '../src/dev/zone_editor';
-import { ZONE1_CAMPS, ZONE1_NPCS, ZONE1_PROPS } from '../src/sim/content/zone1';
+import { ZONE1_CAMPS, ZONE1_NPCS, ZONE1_PROPS, ZONE1_ROADS, ZONE1_ZONE } from '../src/sim/content/zone1';
 
 describe('zone_editor_save', () => {
   it('writes export JSON and merges into a temp zone file', () => {
@@ -14,7 +14,7 @@ describe('zone_editor_save', () => {
     const original = readFileSync(path.join(process.cwd(), 'src', 'sim', 'content', 'zone1.ts'), 'utf8');
     writeFileSync(zonePath, original, 'utf8');
 
-    const data = buildZoneEditorExport('eastbrook_vale', ZONE1_PROPS, ZONE1_NPCS, ZONE1_CAMPS);
+    const data = buildZoneEditorExport('eastbrook_vale', ZONE1_ZONE, ZONE1_PROPS, ZONE1_NPCS, ZONE1_CAMPS, ZONE1_ROADS);
     data.props.placedAssets = [{
       id: 'save_test_barrel',
       model: 'barrel',

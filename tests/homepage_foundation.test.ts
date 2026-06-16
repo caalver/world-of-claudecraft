@@ -27,6 +27,7 @@ describe("i18n Translation Foundation", () => {
     expect(t("nav.wiki")).toBe("Wiki");
     expect(t("nav.news")).toBe("News");
     expect(t("nav.download")).toBe("Download");
+    expect(t("nav.mapEditor")).toBe("Map Editor");
     expect(t("nav.loginRegister")).toBe("Login/Register");
     expect(t("highscores.title")).toBe("High Scores Leaderboard");
     expect(t("wiki.title")).toBe("Game Wiki & Guide");

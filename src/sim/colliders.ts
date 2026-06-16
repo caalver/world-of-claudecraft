@@ -2,6 +2,7 @@ import { generateDecorations } from './world';
 import {
   DUNGEON_X_THRESHOLD, INSTANCE_SLOT_COUNT, PROPS, arenaOriginAt, dungeonAt, instanceOrigin, isArenaPos,
 } from './data';
+import { filterProceduralDecorations, type SuppressedTreeDef } from './tree_suppressions';
 import { buildingWallBlocks, isEnterableBuilding, resolveBuildingDoors } from './building_layout';
 import { placedAssetColliders } from './prop_library';
 import { ARENA_LAYOUT, CRYPT_LAYOUT, SANCTUM_LAYOUT, layoutColliders } from './dungeon_layout';
@@ -10,6 +11,19 @@ import { ARENA_LAYOUT, CRYPT_LAYOUT, SANCTUM_LAYOUT, layoutColliders } from './d
 // modules (merged into PROPS by sim/data.ts): the renderer builds its meshes
 // from the same defs, so what you see is what you collide with.
 // Sim layer: no three.js imports.
+
+export type AuthoredTreeCollider = { x: number; z: number; scale?: number };
+
+/** Map editor: live tree edits before publish. */
+let runtimeTreeOverlay: {
+  authoredTrees: AuthoredTreeCollider[];
+  suppressedTrees: SuppressedTreeDef[];
+} | null = null;
+let runtimeTreeOverlayKey = '';
+
+export function authoredTreeColliderRadius(scale?: number): number {
+  return 0.55 * (scale ?? 1.05);
+}
 
 export interface CircleCollider {
   type: 'circle';
@@ -92,13 +106,18 @@ function staticWorldColliders(seed: number): Collider[] {
   }
 
   // trees & large rocks from the deterministic decoration field
-  for (const d of generateDecorations(seed)) {
+  const suppressedTrees = runtimeTreeOverlay?.suppressedTrees ?? PROPS.suppressedTrees ?? [];
+  for (const d of filterProceduralDecorations(generateDecorations(seed), suppressedTrees)) {
     if (d.kind === 'rock') {
       if (d.scale >= 0.8) out.push({ type: 'circle', x: d.x, z: d.z, r: 0.7 * d.scale });
     } else {
       // tree trunks only — canopies don't block
       out.push({ type: 'circle', x: d.x, z: d.z, r: 0.55 * d.scale });
     }
+  }
+  const authoredTrees = runtimeTreeOverlay?.authoredTrees ?? PROPS.authoredTrees ?? [];
+  for (const t of authoredTrees) {
+    out.push({ type: 'circle', x: t.x, z: t.z, r: authoredTreeColliderRadius(t.scale) });
   }
   return out;
 }
@@ -129,6 +148,16 @@ interface ColliderGrid {
 }
 
 const gridCache = new Map<number, ColliderGrid>();
+
+export function setRuntimeTreeColliderOverlay(
+  overlay: typeof runtimeTreeOverlay,
+): void {
+  const key = overlay ? JSON.stringify(overlay) : '';
+  if (key === runtimeTreeOverlayKey) return;
+  runtimeTreeOverlayKey = key;
+  runtimeTreeOverlay = overlay;
+  gridCache.clear();
+}
 
 function colliderBounds(c: Collider): { minX: number; maxX: number; minZ: number; maxZ: number } {
   if (c.type === 'circle') {

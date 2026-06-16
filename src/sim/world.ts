@@ -1,4 +1,6 @@
 import { fbm2, hash2 } from './rng';
+import { stripZoneBands } from './zone_bounds';
+import { lakesForZone } from './lake_overlay';
 import {
   CAMPS, DUNGEON_FLOOR_Y, DUNGEON_X_THRESHOLD, EAST_PROTRUSION, ROADS, WORLD_MAX_X, WORLD_MAX_Z,
   WORLD_MIN_X, WORLD_MIN_Z, ZONES, inOverworldBounds, isInEastProtrusion,
@@ -25,10 +27,11 @@ const BIOME_SHAPE: Record<BiomeId, { hill: number; base: number; hubHeight: numb
   peaks: { hill: 34, base: 7, hubHeight: 9 },
 };
 
-// Ridge walls between zone bands, each opened by a road pass.
+// Ridge walls between strip zone bands, each opened by a road pass.
+const STRIP_ZONES = stripZoneBands(ZONES);
 const ZONE_RIDGES: { z: number; passX: number }[] = [];
-for (let i = 0; i + 1 < ZONES.length; i++) {
-  ZONE_RIDGES.push({ z: ZONES[i].zMax, passX: 0 });
+for (let i = 0; i + 1 < STRIP_ZONES.length; i++) {
+  ZONE_RIDGES.push({ z: STRIP_ZONES[i].zMax, passX: 0 });
 }
 const RIDGE_HEIGHT = 22;
 const RIDGE_SIGMA = 18; // gaussian width of the wall
@@ -54,12 +57,12 @@ function lerp(a: number, b: number, t: number): number {
 // Blended biome shape at a given z. Zone interiors keep their exact shape;
 // blends happen across ±~35yd windows at the band boundaries.
 function shapeAt(z: number): { hill: number; base: number } {
-  let hill = BIOME_SHAPE[ZONES[0].biome].hill;
-  let base = BIOME_SHAPE[ZONES[0].biome].base;
-  for (let i = 0; i + 1 < ZONES.length; i++) {
-    const boundary = ZONES[i].zMax;
+  let hill = BIOME_SHAPE[STRIP_ZONES[0].biome].hill;
+  let base = BIOME_SHAPE[STRIP_ZONES[0].biome].base;
+  for (let i = 0; i + 1 < STRIP_ZONES.length; i++) {
+    const boundary = STRIP_ZONES[i].zMax;
     const t = smoothstep(boundary - 30, boundary + 35, z);
-    const next = BIOME_SHAPE[ZONES[i + 1].biome];
+    const next = BIOME_SHAPE[STRIP_ZONES[i + 1].biome];
     hill = lerp(hill, next.hill, t);
     base = lerp(base, next.base, t);
   }
@@ -72,7 +75,7 @@ function zoneHubs(zone: (typeof ZONES)[number]): { x: number; z: number; radius:
   return out;
 }
 
-function baseHeight(x: number, z: number, seed: number): number {
+function baseHeightLand(x: number, z: number, seed: number): number {
   const shape = shapeAt(z);
   let h = (fbm2(x * HILL_SCALE + 100, z * HILL_SCALE + 100, seed, 4) - 0.5) * shape.hill + shape.base;
   h += (fbm2(x * DETAIL_SCALE, z * DETAIL_SCALE, seed + 7, 2) - 0.5) * 2.2;
@@ -90,9 +93,12 @@ function baseHeight(x: number, z: number, seed: number): number {
   // Keep dry land everywhere: soft-floor low dips above the water level...
   const minLand = WATER_LEVEL + 1.4;
   if (h < minLand) h = minLand - (minLand - h) * 0.12;
-  // ...except the carved lake basins
+  return h;
+}
+
+function applyLakeCarve(h: number, x: number, z: number): number {
   for (const zone of ZONES) {
-    for (const lake of zone.lakes) {
+    for (const lake of lakesForZone(zone.id, zone.lakes)) {
       const dLake = Math.sqrt((x - lake.x) ** 2 + (z - lake.z) ** 2);
       if (dLake < lake.radius * 1.6) {
         const lakeBlend = smoothstep(lake.radius * 0.55, lake.radius * 1.6, dLake);
@@ -103,21 +109,30 @@ function baseHeight(x: number, z: number, seed: number): number {
   return h;
 }
 
+function baseHeight(x: number, z: number, seed: number): number {
+  return applyLakeCarve(baseHeightLand(x, z, seed), x, z);
+}
+
 // Ground height including instanced dungeon floors (flat, far off-world).
 export function groundHeight(x: number, z: number, seed: number): number {
   if (x > DUNGEON_X_THRESHOLD) return DUNGEON_FLOOR_Y;
   return terrainHeight(x, z, seed);
 }
 
-export function terrainHeight(x: number, z: number, seed: number): number {
-  let h = baseHeight(x, z, seed);
 
+function finishTerrainHeight(
+  h: number,
+  x: number,
+  z: number,
+  seed: number,
+  landAt: (lx: number, lz: number, s: number) => number,
+): number {
   // Flatten each camp a little so mobs don't stand on cliffs
   for (const camp of CAMPS) {
     const dx = x - camp.center.x, dz = z - camp.center.z;
     const d = Math.sqrt(dx * dx + dz * dz);
     if (d < camp.radius * 1.8) {
-      const ch = baseHeight(camp.center.x, camp.center.z, seed);
+      const ch = landAt(camp.center.x, camp.center.z, seed);
       const blend = smoothstep(camp.radius * 0.8, camp.radius * 1.8, d);
       h = h * blend + ch * (1 - blend);
     }
@@ -176,6 +191,17 @@ export function terrainHeight(x: number, z: number, seed: number): number {
   const rim = Math.max(westRim, mainEastRim, protrusionRim, rimS, rimN);
   h += rim * 40;
   return h;
+}
+
+/** Matches the baked terrain mesh — no editor lake overlay carving. */
+export function terrainHeightUncarved(x: number, z: number, seed: number): number {
+  if (x > DUNGEON_X_THRESHOLD) return DUNGEON_FLOOR_Y;
+  return finishTerrainHeight(baseHeightLand(x, z, seed), x, z, seed, baseHeightLand);
+}
+
+export function terrainHeight(x: number, z: number, seed: number): number {
+  if (x > DUNGEON_X_THRESHOLD) return DUNGEON_FLOOR_Y;
+  return finishTerrainHeight(baseHeight(x, z, seed), x, z, seed, baseHeightLand);
 }
 
 // Distance from (x,z) to the nearest road polyline segment.

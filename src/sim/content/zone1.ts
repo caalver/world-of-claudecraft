@@ -12,14 +12,22 @@ export const LAKE = { x: -92, z: 88, radius: 30 };
 
 export const ZONE1_ZONE: ZoneDef = {
   id: 'eastbrook_vale',
+// @zone-editor-begin ZONE1_META
   name: 'Eastbrook Vale',
   zMin: -180,
   zMax: 180,
-  levelRange: [1, 7],
+  levelRange: [1, 10],
   biome: 'vale',
-  hub: { x: 0, z: 0, radius: TOWN_RADIUS, name: 'Eastbrook' },
-  graveyard: GRAVEYARD_POS,
-  lakes: [LAKE],
+  hub: { x: 0, z: 0, radius: 20, name: 'Hub' },
+  graveyard: { x: -12, z: -14 },
+  welcomeQuestId: 'q_wolves',
+// @zone-editor-end ZONE1_META
+// @zone-editor-begin ZONE1_LAKES
+  lakes: [
+    { x: -92, z: 88, radius: 30 },
+    { x: 122.251, z: 11.179, radius: 5 },
+  ],
+// @zone-editor-end ZONE1_LAKES
   pois: [
     { x: 0, z: -3, label: 'Eastbrook' },
     { x: -2, z: 70, label: 'Wolf Run' },
@@ -30,8 +38,6 @@ export const ZONE1_ZONE: ZoneDef = {
     { x: 76, z: -76, label: 'Bandit Camp' },
     { x: 80, z: 80, label: 'Fallen Chapel' },
   ],
-  welcome: 'Find Marshal Redbrook in town — he has work for you.',
-  welcomeQuestId: 'q_wolves',
 };
 
 // ---------------------------------------------------------------------------
@@ -215,7 +221,7 @@ export const ZONE1_NPCS: Record<string, NpcDef> = {
   the_merchant: {
     id: 'the_merchant', name: 'The Merchant', title: 'Keeper of the World Market',
     // centerpiece of the square, just north of the well, facing the approach
-    pos: { x: 2.892, z: 10.408 }, facing: 4.702, color: 0xd4af37,
+    pos: { x: 9.728, z: 7.362 }, facing: 4.162, color: 0xd4af37,
     questIds: [],
     market: true,
     greeting: 'Welcome to the World Market, $C. Buy from every adventurer in the realm — or set out your own wares and let coin find you.',
@@ -250,7 +256,7 @@ export const ZONE1_NPCS: Record<string, NpcDef> = {
   },
   smith_haldren: {
     id: 'smith_haldren', name: 'Smith Haldren', title: 'Armorer & Weaponsmith',
-    pos: { x: 9.533, z: 17.15 }, facing: -7.02, color: 0x707b7c,
+    pos: { x: 2.109, z: 15.11 }, facing: -3.3, color: 0x707b7c,
     questIds: [],
     vendorItems: [
       'eastbrook_arming_sword', 'bronzework_mace', 'vale_carving_knife', 'hickory_shortstaff',
@@ -273,7 +279,7 @@ export const ZONE1_NPCS: Record<string, NpcDef> = {
     id: 'foreman_odell', name: 'Foreman Odell', title: 'Mine Foreman',
     // in town (south edge, scowling toward his overrun dig) — his old spot
     // sat inside the Tunnel Rat spawn radius
-    pos: { x: 2.813, z: -13.352 }, facing: -2.14, color: 0xa04000,
+    pos: { x: -0.571, z: -13.85 }, facing: -0.64, color: 0xa04000,
     questIds: ['q_mine'],
     greeting: "Whole dig's crawling with those candle-headed vermin!",
   },
@@ -491,7 +497,6 @@ export const ZONE1_CAMPS: CampDef[] = [
   { mobId: 'forest_wolf', center: { x: -15, z: 55 }, radius: 22, count: 7 },
   { mobId: 'forest_wolf', center: { x: 20, z: 70 }, radius: 20, count: 6 },
   { mobId: 'old_greyjaw', center: { x: 0, z: 95 }, radius: 8, count: 1 },
-  { mobId: 'wild_boar', center: { x: 55, z: 12 }, radius: 22, count: 6 },
   { mobId: 'wild_boar', center: { x: 80, z: -15 }, radius: 18, count: 5 },
   { mobId: 'elder_bristleback', center: { x: 104, z: 24 }, radius: 4, count: 1 },
   { mobId: 'mogger', center: { x: 118, z: -26 }, radius: 5, count: 1 },
@@ -533,15 +538,17 @@ export const ZONE1_OBJECTS: GroundObjectDef[] = [
 ];
 
 // Roads from town toward each hub — used for terrain painting and the map.
-// Roads from town toward each hub — used for terrain painting and the map.
+// @zone-editor-begin ZONE1_ROADS
 export const ZONE1_ROADS: { x: number; z: number }[][] = [
-  [{ x: 0, z: 8 }, { x: -8, z: 30 }, { x: -15, z: 55 }, { x: -2, z: 78 }],          // north to wolves
-  [{ x: 8, z: 2 }, { x: 30, z: 8 }, { x: 55, z: 12 }],                              // east to boars
-  [{ x: 6, z: -6 }, { x: 30, z: -30 }, { x: 50, z: -50 }, { x: 65, z: -65 }],       // southeast to bandits
-  [{ x: -8, z: 6 }, { x: -35, z: 25 }, { x: -58, z: 48 }, { x: -66, z: 58 }],       // northwest to lake
-  [{ x: -6, z: -6 }, { x: -30, z: -28 }, { x: -55, z: -45 }, { x: -70, z: -55 }],   // southwest to mine
-  [{ x: 6, z: 8 }, { x: 35, z: 35 }, { x: 60, z: 60 }, { x: 78, z: 74 }],           // northeast to ruins
+  [{ x: 0, z: 8 }, { x: -8, z: 30 }, { x: -15, z: 55 }, { x: -2, z: 78 }],
+  [{ x: 8, z: 2 }, { x: 30, z: 8 }, { x: 55, z: 12 }],
+  [{ x: 6, z: -6 }, { x: 30, z: -30 }, { x: 50, z: -50 }, { x: 65, z: -65 }],
+  [{ x: -8, z: 6 }, { x: -35, z: 25 }, { x: -58, z: 48 }, { x: -66, z: 58 }],
+  [{ x: -6, z: -6 }, { x: -30, z: -28 }, { x: -55, z: -45 }, { x: -70, z: -55 }],
+  [{ x: 6, z: 8 }, { x: 35, z: 35 }, { x: 60, z: 60 }, { x: 78, z: 74 }],
+  [{ x: -5.889, z: 26.018 }, { x: 20.06, z: 22.97 }],
 ];
+// @zone-editor-end ZONE1_ROADS
 
 // ---------------------------------------------------------------------------
 // Static props (rendering + collision share this placement data)
@@ -550,16 +557,16 @@ export const ZONE1_ROADS: { x: number; z: number }[][] = [
 // @zone-editor-begin ZONE1_PROPS
 export const ZONE1_PROPS: ZonePropsDef = {
   buildings: [
-    { kind: 'house', prop: 'house2', x: 11.441, z: 8.923, w: 14, d: 12, rot: -0.4 },
+    { kind: 'house', prop: 'house2', x: 16.264, z: -3.636, w: 14, d: 12, rot: -2.98 },
     { kind: 'house', prop: 'house2', x: -10, z: 10, w: 12, d: 10, rot: 0.5 },
-    { kind: 'inn', x: 11.44, z: -10.482, w: 12, d: 14, rot: 2.4 },
+    { kind: 'inn', x: 5.907, z: -19.492, w: 12, d: 14, rot: 2.4 },
     { kind: 'chapel', x: -18.185, z: -4.753, w: 12.5, d: 14, rot: 1.38 },
   ],
   wells: [{ x: -1.498, z: 1.274, r: 1.5 }],
   stalls: [
     { x: -9.902, z: 1.487, rot: 1.931, r: 1.7 },
-    { x: 7.846, z: 14.713, rot: -3.6, r: 1.7 },
-    { x: 4.343, z: 7.512, rot: 4.342, r: 1.8 },
+    { x: 5.835, z: 15.144, rot: 0.12, r: 1.7 },
+    { x: 12.633, z: 8.546, rot: 4.342, r: 1.8 },
   ],
   mines: [{ x: -88, z: -68, rot: 0.8 }],
   docks: [{ x: -64, z: 60, rot: -2.2, hutLocal: { x: 2.8, z: 2.4, hw: 1.7, hd: 1.5 } }],
@@ -579,6 +586,12 @@ export const ZONE1_PROPS: ZonePropsDef = {
   ],
   graveyards: [{ x: -14.083, z: -14.111 }],
   placedAssets: [
+  ],
+  authoredTrees: [
+    { x: -3.776, z: -45.509, kind: 'tree2', scale: 2.9 },
+  ],
+  suppressedTrees: [
+    { x: -30.413, z: -59.072 },
   ],
 };
 // @zone-editor-end ZONE1_PROPS

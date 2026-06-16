@@ -22,6 +22,7 @@ export const en = {
     wiki: "Wiki",
     news: "News",
     download: "Download",
+    mapEditor: "Map Editor",
     loginRegister: "Login/Register",
   },
   stats: {
@@ -152,6 +153,7 @@ export const es: typeof en = {
     wiki: "Wiki",
     news: "Noticias",
     download: "Descargar",
+    mapEditor: "Editor de Mapas",
     loginRegister: "Iniciar Sesión/Registrarse",
   },
   stats: {
@@ -282,6 +284,7 @@ export const es_ES: typeof en = {
     wiki: "Wiki",
     news: "Noticias",
     download: "Descargar",
+    mapEditor: "Editor de Mapas",
     loginRegister: "Iniciar sesión/Registrarse",
   },
   stats: {
@@ -412,6 +415,7 @@ export const fr_FR: typeof en = {
     wiki: "Wiki",
     news: "Actualités",
     download: "Télécharger",
+    mapEditor: "Éditeur de carte",
     loginRegister: "Se connecter/S'inscrire",
   },
   stats: {
@@ -542,6 +546,7 @@ export const fr_CA: typeof en = {
     wiki: "Wiki",
     news: "Actualités",
     download: "Télécharger",
+    mapEditor: "Éditeur de carte",
     loginRegister: "Se connecter/S'enregistrer",
   },
   stats: {
@@ -672,6 +677,7 @@ export const en_CA: typeof en = {
     wiki: "Wiki",
     news: "News",
     download: "Download",
+    mapEditor: "Map Editor",
     loginRegister: "Login/Register",
   },
   stats: {
@@ -802,6 +808,7 @@ export const it_IT: typeof en = {
     wiki: "Wiki",
     news: "Novità",
     download: "Scarica",
+    mapEditor: "Editor di Mappe",
     loginRegister: "Accedi/Registrati",
   },
   stats: {
@@ -932,6 +939,7 @@ export const de_DE: typeof en = {
     wiki: "Wiki",
     news: "Neuigkeiten",
     download: "Herunterladen",
+    mapEditor: "Karten-Editor",
     loginRegister: "Einloggen/Registrieren",
   },
   stats: {
@@ -1062,6 +1070,7 @@ export const zh_CN: typeof en = {
     wiki: "百科指南",
     news: "新闻资讯",
     download: "下载客户端",
+    mapEditor: "地图编辑器",
     loginRegister: "登录/注册",
   },
   stats: {
@@ -1192,6 +1201,7 @@ export const zh_TW: typeof en = {
     wiki: "百科指南",
     news: "最新消息",
     download: "下載客戶端",
+    mapEditor: "地圖編輯器",
     loginRegister: "登入/註冊",
   },
   stats: {
@@ -1322,6 +1332,7 @@ export const ko_KR: typeof en = {
     wiki: "위키",
     news: "새소식",
     download: "다운로드",
+    mapEditor: "맵 에디터",
     loginRegister: "로그인/회원가입",
   },
   stats: {
@@ -1452,6 +1463,7 @@ export const ja_JP: typeof en = {
     wiki: "Wiki",
     news: "ニュース",
     download: "ダウンロード",
+    mapEditor: "マップエディター",
     loginRegister: "ログイン/登録",
   },
   stats: {
@@ -1582,6 +1594,7 @@ export const pt_BR: typeof en = {
     wiki: "Wiki",
     news: "Notícias",
     download: "Baixar",
+    mapEditor: "Editor de Mapas",
     loginRegister: "Entrar/Registrar",
   },
   stats: {
@@ -1712,6 +1725,7 @@ export const ru_RU: typeof en = {
     wiki: "Вики",
     news: "Новости",
     download: "Скачать",
+    mapEditor: "Редактор карт",
     loginRegister: "Войти / Зарегистрироваться",
   },
   stats: {

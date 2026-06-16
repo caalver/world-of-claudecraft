@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>World of ClaudeCraft — Map Editor</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <style>
+    :root {
+      --gold: #ffd100;
+      --border: #3a5068;
+      --panel: #0b1018;
+      --text: #e8ecf4;
+      --dim: #9ab;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; background: #06080c; color: var(--text); font: 13px/1.45 Consolas, monospace; }
+    #editor-root { display: grid; grid-template-columns: 320px 1fr; height: 100%; }
+    #editor-sidebar {
+      background: var(--panel); border-right: 1px solid var(--border);
+      overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px;
+    }
+    #editor-sidebar h1 { font: 700 15px Georgia, serif; color: var(--gold); }
+    #editor-sidebar h2 { font: 700 12px Georgia, serif; color: #8ac; margin-top: 4px; }
+    .tool-row { display: flex; flex-wrap: wrap; gap: 4px; }
+    button, .btn {
+      padding: 5px 8px; cursor: pointer; border-radius: 4px;
+      border: 1px solid var(--border); background: #152030; color: var(--text);
+    }
+    button:hover, .btn:hover { filter: brightness(1.15); }
+    button.active { background: #1b4332; border-color: #40916c; color: #b7f0c8; }
+    .btn-primary { background: #5c2e8a; border-color: #9b59b6; font-weight: 700; }
+    .btn-warn { background: #6b2d2d; border-color: #c44; }
+    .btn-live { background: #1b4332; border-color: #40916c; font-weight: 700; }
+    label { display: block; font-size: 11px; color: var(--dim); margin-bottom: 2px; }
+    input, select {
+      width: 100%; padding: 5px; margin-bottom: 6px;
+      background: #111820; border: 1px solid var(--border); color: var(--text); border-radius: 4px;
+    }
+    #editor-status {
+      font-size: 11px; color: var(--dim); padding: 8px; background: #0d1219;
+      border: 1px solid var(--border); border-radius: 4px; min-height: 48px;
+    }
+    #editor-viewport { position: relative; background: #000; min-height: 0; height: 100%; overflow: hidden; }
+    #editor-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+    #editor-topbar {
+      position: absolute; top: 8px; left: 8px; right: 8px; display: flex; gap: 8px; align-items: center;
+      pointer-events: none;
+    }
+    #editor-topbar a, #editor-topbar span {
+      pointer-events: auto; padding: 6px 10px; background: rgba(8,12,20,0.85);
+      border: 1px solid var(--border); border-radius: 4px; color: var(--gold); text-decoration: none;
+    }
+    #ze-panel-host { font-size: 12px; }
+    #ze-panel-host #zone-editor-panel {
+      position: relative !important; display: block !important; max-width: none !important;
+      width: 100% !important; box-shadow: none !important; padding: 0 !important;
+      background: transparent !important; border: none !important;
+    }
+    .section { border-top: 1px solid var(--border); padding-top: 8px; }
+  </style>
+</head>
+<body>
+  <div id="editor-root">
+    <aside id="editor-sidebar">
+      <h1>Map Editor</h1>
+      <p style="font-size:11px;color:var(--dim)">No login required · Dev tools · F7 fly · Space rise</p>
+
+      <div class="section">
+        <h2>Zone</h2>
+        <label for="core-zone-select">Edit zone</label>
+        <select id="core-zone-select"></select>
+        <div class="tool-row">
+          <button type="button" id="btn-new-zone">New Strip Zone</button>
+          <button type="button" id="btn-add-aldermere">Add Aldermere</button>
+          <button type="button" id="btn-join-zone">Join Strips</button>
+          <button type="button" id="btn-delete-zone" class="btn-warn">Delete</button>
+        </div>
+        <p style="font-size:10px;color:var(--dim);margin:4px 0">Colored rectangles show zone bounds. City zones use xMin/xMax.</p>
+        <label for="zone-id">Zone id</label>
+        <input id="zone-id" type="text" />
+        <label for="zone-name">Display name</label>
+        <input id="zone-name" type="text" />
+        <label for="zone-z-min">zMin (south edge)</label>
+        <input id="zone-z-min" type="number" step="1" />
+        <label for="zone-z-max">zMax (north edge)</label>
+        <input id="zone-z-max" type="number" step="1" />
+        <label for="zone-x-min">xMin (optional — city/protrusion)</label>
+        <input id="zone-x-min" type="number" step="1" placeholder="leave empty for main strip" />
+        <label for="zone-x-max">xMax (optional)</label>
+        <input id="zone-x-max" type="number" step="1" placeholder="leave empty for main strip" />
+        <label for="zone-biome">Biome</label>
+        <select id="zone-biome">
+          <option value="vale">vale</option>
+          <option value="marsh">marsh</option>
+          <option value="peaks">peaks</option>
+        </select>
+        <label for="zone-level-min">Level min</label>
+        <input id="zone-level-min" type="number" min="1" max="20" step="1" />
+        <label for="zone-level-max">Level max</label>
+        <input id="zone-level-max" type="number" min="1" max="20" step="1" />
+        <label for="zone-hub-x">Hub x</label>
+        <input id="zone-hub-x" type="number" step="1" />
+        <label for="zone-hub-z">Hub z</label>
+        <input id="zone-hub-z" type="number" step="1" />
+        <label for="zone-hub-radius">Hub radius</label>
+        <input id="zone-hub-radius" type="number" min="5" step="1" />
+        <label for="zone-hub-name">Hub name</label>
+        <input id="zone-hub-name" type="text" />
+        <label for="zone-welcome">Welcome text</label>
+        <input id="zone-welcome" type="text" />
+        <button type="button" id="btn-apply-zone" class="btn-primary" style="margin-top:6px">Apply Zone Settings</button>
+      </div>
+
+      <div class="section">
+        <h2>Tools</h2>
+        <div class="tool-row">
+          <button type="button" data-tool="select" class="active">Select</button>
+          <button type="button" data-tool="placeAsset">Assets</button>
+          <button type="button" data-tool="placeTree">Trees</button>
+          <button type="button" data-tool="placeRoad">Roads</button>
+          <button type="button" data-tool="placeLake">Lakes</button>
+          <button type="button" data-tool="placeNpc">NPCs</button>
+          <button type="button" data-tool="placeCamp">Camps</button>
+        </div>
+        <div class="tool-row" style="margin-top:4px">
+          <button type="button" id="btn-new-road">New Road</button>
+          <button type="button" id="btn-finish-road">Finish Road</button>
+        </div>
+        <label for="lake-radius-input">Lake radius (place / selected)</label>
+        <input id="lake-radius-input" type="number" min="3" max="120" step="1" value="25" />
+        <label for="npc-template-select">NPC template (place mode)</label>
+        <select id="npc-template-select"></select>
+        <label for="mob-template-select">Camp mob</label>
+        <select id="mob-template-select"></select>
+        <label for="tree-kind-select">Tree species (place / selected)</label>
+        <select id="tree-kind-select">
+          <option value="tree">Pine (tree)</option>
+          <option value="tree2" selected>Oak (tree2)</option>
+        </select>
+        <label for="tree-scale-input">Tree scale</label>
+        <input id="tree-scale-input" type="number" min="0.3" max="3" step="0.05" value="1.05" />
+      </div>
+
+      <div class="section">
+        <h2>Props &amp; NPCs</h2>
+        <div id="ze-panel-host"></div>
+      </div>
+
+      <div class="section">
+        <h2>Draft (safe — not live)</h2>
+        <label for="draft-name">Draft name</label>
+        <input id="draft-name" type="text" placeholder="My map layout" />
+        <label for="draft-id">Draft id</label>
+        <input id="draft-id" type="text" placeholder="my_draft" />
+        <label for="draft-select">Saved drafts</label>
+        <select id="draft-select"></select>
+        <div class="tool-row">
+          <button type="button" id="btn-save-draft" class="btn-primary">Save Draft</button>
+          <button type="button" id="btn-load-draft">Load</button>
+          <button type="button" id="btn-delete-draft" class="btn-warn">Delete</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>Live world</h2>
+        <div class="tool-row">
+          <button type="button" id="btn-publish-live" class="btn-live">Publish Zone</button>
+          <button type="button" id="btn-publish-all" class="btn-live">Publish All</button>
+          <button type="button" id="btn-reload-live">Reload Live</button>
+        </div>
+        <p style="font-size:10px;color:var(--dim);margin-top:4px">Publish merges zone bounds, props, NPCs, camps, roads, and lakes. Publish All also updates the zone registry. Reload game (F5) after publish.</p>
+      </div>
+
+      <div id="editor-status">Loading…</div>
+    </aside>
+    <main id="editor-viewport">
+      <div id="editor-topbar">
+        <a href="/">← Back to game</a>
+        <span>GM fly: F7 · Hold Space to rise</span>
+      </div>
+      <canvas id="editor-canvas"></canvas>
+    </main>
+  </div>
+  <script type="module" src="/src/editor/main.ts"></script>
+</body>
+</html>

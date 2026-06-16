@@ -20,6 +20,10 @@ __pycache__/
 .env.*
 !.env.example
 
+# map editor working files
+editor/drafts/
+editor/exports/
+
 # editor & OS noise
 .DS_Store
 Thumbs.db
