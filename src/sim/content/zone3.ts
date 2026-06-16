@@ -512,6 +512,7 @@ export const ZONE3_QUEST_ORDER = [
 // World layout
 // ---------------------------------------------------------------------------
 
+// @zone-editor-begin ZONE3_CAMPS
 export const ZONE3_CAMPS: CampDef[] = [
   // Ridge stalkers: the ridge flanking the road from the pass
   { mobId: 'ridge_stalker', center: { x: -50, z: 590 }, radius: 22, count: 7 },
@@ -538,6 +539,7 @@ export const ZONE3_CAMPS: CampDef[] = [
   { mobId: 'boneclad_revenant', center: { x: -15, z: 860 }, radius: 16, count: 6 },
   { mobId: 'marrowlord_varkas', center: { x: -34, z: 842 }, radius: 5, count: 1 },
 ];
+// @zone-editor-end ZONE3_CAMPS
 
 export const ZONE3_OBJECTS: GroundObjectDef[] = [
   {
@@ -795,6 +797,7 @@ export const ZONE3_ITEMS: Record<string, ItemDef> = {
 // sits on a high plateau (~9 elevation); the lake at (-70,760) stays clear.
 // ---------------------------------------------------------------------------
 
+// @zone-editor-begin ZONE3_PROPS
 export const ZONE3_PROPS: ZonePropsDef = {
   buildings: [
     { kind: 'house', prop: 'house2', x: 12, z: 672, w: 14, d: 12, rot: -0.5 },
@@ -836,3 +839,4 @@ export const ZONE3_PROPS: ZonePropsDef = {
   graveyards: [{ x: 15, z: 645 }],
   placedAssets: [],
 };
+// @zone-editor-end ZONE3_PROPS

@@ -14,7 +14,7 @@ describe('zone_editor_save', () => {
     const original = readFileSync(path.join(process.cwd(), 'src', 'sim', 'content', 'zone1.ts'), 'utf8');
     writeFileSync(zonePath, original, 'utf8');
 
-    const data = buildZoneEditorExport(ZONE1_PROPS, ZONE1_NPCS, ZONE1_CAMPS);
+    const data = buildZoneEditorExport('eastbrook_vale', ZONE1_PROPS, ZONE1_NPCS, ZONE1_CAMPS);
     data.props.placedAssets = [{
       id: 'save_test_barrel',
       model: 'barrel',

@@ -1,12 +1,19 @@
 // Dev-only zone content editor (Phase 1). Toggle with F8 in `npm run dev`.
-// Edits a working copy of zone 1 props / NPCs / camps; live meshes + wireframes
-// show placement. Save merges into zone1.ts via the Vite dev endpoint.
+// Edits a working copy of the active zone's props / NPCs / camps; live meshes
+// + wireframes show placement. Save merges into zone*.ts via the Vite dev endpoint.
 import * as THREE from 'three';
 import type { Renderer } from '../render/renderer';
-import { buildProps } from '../render/props';import type { IWorld } from '../world_api';
+import { buildProps } from '../render/props';
+import type { IWorld } from '../world_api';
 import type { Sim } from '../sim/sim';
 import type { BuildingDef, CampDef, NpcDef, PlacedAssetDef, ZonePropsDef } from '../sim/types';
-import { ZONE1_CAMPS, ZONE1_NPCS, ZONE1_PROPS } from '../sim/content/zone1';
+import {
+  cloneZoneEditorProps,
+  resolveEditorZoneId,
+  ZONE_EDITOR_IDS,
+  ZONE_EDITOR_SOURCES,
+  type EditorZoneId,
+} from './zone_editor_zones';
 import {
   PROP_LIBRARY,
   defaultPlacedColliders,
@@ -19,7 +26,19 @@ import { terrainHeight } from '../sim/world';
 
 const WORLD_SEED = 20061;
 
-type SelKind = 'building' | 'well' | 'stall' | 'mine' | 'dock' | 'tent' | 'crate' | 'campfire' | 'mudHut' | 'graveyard' | 'npc' | 'camp' | 'placedAsset';
+function fenceMidpoint(f: { x1: number; z1: number; x2: number; z2: number }): { x: number; z: number } {
+  return { x: (f.x1 + f.x2) / 2, z: (f.z1 + f.z2) / 2 };
+}
+
+function pointSegDist(px: number, pz: number, x1: number, z1: number, x2: number, z2: number): number {
+  const abx = x2 - x1, abz = z2 - z1;
+  const apx = px - x1, apz = pz - z1;
+  const len2 = abx * abx + abz * abz;
+  const t = len2 > 1e-6 ? Math.max(0, Math.min(1, (apx * abx + apz * abz) / len2)) : 0;
+  return Math.hypot(apx - abx * t, apz - abz * t);
+}
+
+type SelKind = 'building' | 'well' | 'stall' | 'mine' | 'dock' | 'tent' | 'crate' | 'campfire' | 'mudHut' | 'graveyard' | 'fence' | 'npc' | 'camp' | 'placedAsset';
 
 interface Selection {
   kind: SelKind;
@@ -28,13 +47,14 @@ interface Selection {
 }
 
 export interface ZoneEditorExport {
-  zone: 'eastbrook_vale';
+  zone: EditorZoneId;
   props: ZonePropsDef;
   npcs: Record<string, Pick<NpcDef, 'pos' | 'facing'>>;
   camps: CampDef[];
 }
 
 export function buildZoneEditorExport(
+  zone: EditorZoneId,
   props: ZonePropsDef,
   npcs: Record<string, NpcDef>,
   camps: CampDef[],
@@ -44,7 +64,7 @@ export function buildZoneEditorExport(
     npcOut[id] = { pos: { x: n.pos.x, z: n.pos.z }, facing: n.facing };
   }
   return {
-    zone: 'eastbrook_vale',
+    zone,
     props: structuredClone(props),
     npcs: npcOut,
     camps: structuredClone(camps),
@@ -53,6 +73,7 @@ export function buildZoneEditorExport(
 
 export class ZoneEditor {
   active = false;
+  private zoneId: EditorZoneId = 'eastbrook_vale';
   private panel: HTMLDivElement;
   private group = new THREE.Group();
   private meshGroup = new THREE.Group();
@@ -80,10 +101,9 @@ export class ZoneEditor {
     private world: IWorld,
     private offlineSim: Sim | null,
   ) {
-    this.props = structuredClone(ZONE1_PROPS);
-    if (!this.props.placedAssets) this.props.placedAssets = [];
-    this.npcs = structuredClone(ZONE1_NPCS);
-    this.camps = structuredClone(ZONE1_CAMPS);
+    this.props = cloneZoneEditorProps(ZONE_EDITOR_SOURCES.eastbrook_vale.props);
+    this.npcs = structuredClone(ZONE_EDITOR_SOURCES.eastbrook_vale.npcs);
+    this.camps = structuredClone(ZONE_EDITOR_SOURCES.eastbrook_vale.camps);
     this.group.name = 'zone-editor';
     this.renderer.scene.add(this.group);
     this.meshGroup.name = 'zone-editor-meshes';
@@ -94,6 +114,11 @@ export class ZoneEditor {
     this.panel.innerHTML = `
       <div class="ze-title">Zone Editor <span class="ze-badge">DEV</span></div>
       <div class="ze-status">Press <kbd>F8</kbd> to toggle</div>
+      <div class="ze-zone">
+        <label>Zone
+          <select class="ze-zone-select"></select>
+        </label>
+      </div>
       <div class="ze-library">
         <label>Asset
           <select class="ze-asset-select"></select>
@@ -106,10 +131,10 @@ export class ZoneEditor {
         <kbd>Q</kbd>/<kbd>E</kbd>: rotate/facing · <kbd>[</kbd>/<kbd>]</kbd>: width/scale · <kbd>-</kbd>/<kbd>=</kbd>: depth<br>
         <kbd>C</kbd>: copy JSON · <kbd>D</kbd>: download JSON · <kbd>Ctrl+S</kbd>: save
       </div>
-      <button type="button" class="ze-save">Save to zone1.ts</button>
+      <button type="button" class="ze-save">Save to zone file</button>
       <button type="button" class="ze-export">Copy JSON (C)</button>
       <button type="button" class="ze-download">Download JSON (D)</button>
-      <div class="ze-merge">Save writes <code>editor/exports/eastbrook_vale.json</code> and runs merge. Reload (F5) + restart server for collision.</div>
+      <div class="ze-merge">Save writes <code>editor/exports/&lt;zone&gt;.json</code> and runs merge. Reload (F5) + restart server for collision.</div>
     `;
     Object.assign(this.panel.style, {
       position: 'fixed', left: '12px', bottom: '12px', zIndex: '9999',
@@ -147,6 +172,22 @@ export class ZoneEditor {
     Object.assign(merge.style, { marginTop: '8px', fontSize: '11px', color: '#9ab', lineHeight: '1.4' });
     const lib = this.panel.querySelector('.ze-library') as HTMLDivElement;
     Object.assign(lib.style, { marginTop: '6px', marginBottom: '4px' });
+    const zoneRow = this.panel.querySelector('.ze-zone') as HTMLDivElement;
+    Object.assign(zoneRow.style, { marginTop: '6px', marginBottom: '4px' });
+    const zoneSelect = this.panel.querySelector('.ze-zone-select') as HTMLSelectElement;
+    Object.assign(zoneSelect.style, { marginLeft: '6px', maxWidth: '200px' });
+    for (const id of ZONE_EDITOR_IDS) {
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = ZONE_EDITOR_SOURCES[id].name;
+      zoneSelect.appendChild(opt);
+    }
+    zoneSelect.addEventListener('change', () => {
+      const next = zoneSelect.value as EditorZoneId;
+      if (next === this.zoneId) return;
+      this.loadZone(next);
+      if (this.active) this.syncZonePropsVisibility();
+    });
     const mode = this.panel.querySelector('.ze-mode') as HTMLDivElement;
     Object.assign(mode.style, { fontSize: '11px', color: '#8ac', marginBottom: '6px' });
     const select = this.panel.querySelector('.ze-asset-select') as HTMLSelectElement;
@@ -190,6 +231,26 @@ export class ZoneEditor {
     this.refreshPanel();
   }
 
+  private loadZone(zoneId: EditorZoneId, resetSelection = true): void {
+    const src = ZONE_EDITOR_SOURCES[zoneId];
+    this.zoneId = zoneId;
+    this.props = cloneZoneEditorProps(src.props);
+    this.npcs = structuredClone(src.npcs);
+    this.camps = structuredClone(src.camps);
+    this.placedIdSeq = 0;
+    if (resetSelection) this.sel = null;
+    const zoneSelect = this.panel.querySelector('.ze-zone-select') as HTMLSelectElement;
+    if (zoneSelect.value !== zoneId) zoneSelect.value = zoneId;
+    this.markDirty();
+  }
+
+  private syncZonePropsVisibility(): void {
+    this.renderer.setWorldPropsVisible(true);
+    for (const id of ZONE_EDITOR_IDS) {
+      this.renderer.setZonePropsVisible(id, !this.active || id !== this.zoneId);
+    }
+  }
+
   private markDirty(mesh = true): void {
     this.wireDirty = true;
     if (mesh) this.meshDirty = true;
@@ -200,7 +261,11 @@ export class ZoneEditor {
     this.group.visible = on;
     this.meshGroup.visible = on;
     this.panel.style.display = on ? 'block' : 'none';
-    this.renderer.setWorldPropsVisible(!on);
+    if (on) {
+      const { x, z } = this.world.player.pos;
+      this.loadZone(resolveEditorZoneId(x, z));
+    }
+    this.syncZonePropsVisibility();
     if (!on) {
       this.dragging = false;
       this.sel = null;
@@ -288,12 +353,55 @@ export class ZoneEditor {
 
   private deleteSelection(): void {
     if (!this.sel) return;
-    if (this.sel.kind === 'placedAsset') {
-      this.props.placedAssets.splice(this.sel.index, 1);
-      this.sel = null;
-      this.markDirty();
-      return;
+    const s = this.sel;
+    switch (s.kind) {
+      case 'building':
+        this.props.buildings.splice(s.index, 1);
+        break;
+      case 'well':
+        this.props.wells.splice(s.index, 1);
+        break;
+      case 'stall':
+        this.props.stalls.splice(s.index, 1);
+        break;
+      case 'mine':
+        this.props.mines.splice(s.index, 1);
+        break;
+      case 'dock':
+        this.props.docks.splice(s.index, 1);
+        break;
+      case 'tent':
+        this.props.tents.splice(s.index, 1);
+        break;
+      case 'crate':
+        this.props.crates.splice(s.index, 1);
+        break;
+      case 'campfire':
+        this.props.campfires.splice(s.index, 1);
+        break;
+      case 'mudHut':
+        this.props.mudHuts.splice(s.index, 1);
+        break;
+      case 'graveyard':
+        this.props.graveyards.splice(s.index, 1);
+        break;
+      case 'fence':
+        this.props.fences.splice(s.index, 1);
+        break;
+      case 'placedAsset':
+        this.props.placedAssets.splice(s.index, 1);
+        break;
+      case 'camp':
+        this.camps.splice(s.index, 1);
+        break;
+      case 'npc':
+        if (s.npcId) delete this.npcs[s.npcId];
+        break;
+      default:
+        return;
     }
+    this.sel = null;
+    this.markDirty();
   }
 
   private nudgeBuildingSize(dw: number, dd: number): void {
@@ -396,6 +504,13 @@ export class ZoneEditor {
     } else if (s.kind === 'graveyard') {
       const g = this.props.graveyards[s.index];
       if (g) { g.x = x; g.z = z; }
+    } else if (s.kind === 'fence') {
+      const f = this.props.fences[s.index];
+      if (f) {
+        const mid = fenceMidpoint(f);
+        const dx = x - mid.x, dz = z - mid.z;
+        f.x1 += dx; f.z1 += dz; f.x2 += dx; f.z2 += dz;
+      }
     } else if (s.kind === 'npc' && s.npcId) {
       const n = this.npcs[s.npcId];
       if (n) { n.pos.x = x; n.pos.z = z; }
@@ -443,6 +558,10 @@ export class ZoneEditor {
       const a = this.props.placedAssets[sel.index];
       return { x: a?.x ?? 0, z: a?.z ?? 0 };
     }
+    if (sel.kind === 'fence') {
+      const f = this.props.fences[sel.index];
+      return f ? fenceMidpoint(f) : { x: 0, z: 0 };
+    }
     const p = this.pickables.find((pk) => this.selKey(pk.sel) === this.selKey(sel));
     return { x: p?.x ?? 0, z: p?.z ?? 0 };
   }
@@ -452,8 +571,16 @@ export class ZoneEditor {
     let best: typeof this.pickables[0] | null = null;
     let bestScore = Infinity;
     for (const p of this.pickables) {
-      const d = Math.hypot(p.x - x, p.z - z);
-      const score = d / Math.max(0.5, p.r);
+      let score: number;
+      if (p.sel.kind === 'fence') {
+        const f = this.props.fences[p.sel.index];
+        if (!f) continue;
+        const d = pointSegDist(x, z, f.x1, f.z1, f.x2, f.z2);
+        score = d / 2.5;
+      } else {
+        const d = Math.hypot(p.x - x, p.z - z);
+        score = d / Math.max(0.5, p.r);
+      }
       if (score < 1.2 && score < bestScore) {
         bestScore = score;
         best = p;
@@ -493,6 +620,11 @@ export class ZoneEditor {
     });
     this.props.graveyards.forEach((g, i) => {
       out.push({ sel: { kind: 'graveyard', index: i }, x: g.x, z: g.z, r: 3 });
+    });
+    this.props.fences.forEach((f, i) => {
+      const mid = fenceMidpoint(f);
+      const len = Math.hypot(f.x2 - f.x1, f.z2 - f.z1);
+      out.push({ sel: { kind: 'fence', index: i }, x: mid.x, z: mid.z, r: Math.max(2, len * 0.5) });
     });
     for (const [id, n] of Object.entries(this.npcs)) {
       out.push({ sel: { kind: 'npc', index: 0, npcId: id }, x: n.pos.x, z: n.pos.z, r: 1.2 });
@@ -564,6 +696,11 @@ export class ZoneEditor {
     for (const t of this.props.tents) this.addCircle(t.x, t.z, 1.5 * t.scale, 0xaa88cc);
     for (const [x, z] of this.props.crates) this.addCircle(x, z, 0.65, 0xaaaaaa);
     for (const [x, z] of this.props.campfires) this.addCircle(x, z, 0.85, 0xff6622);
+    for (let i = 0; i < this.props.fences.length; i++) {
+      const f = this.props.fences[i];
+      const sel = this.sel?.kind === 'fence' && this.sel.index === i;
+      this.addFenceSegment(f, sel ? 0x66ff99 : 0xcc8844);
+    }
     for (const c of this.camps) this.addCircle(c.center.x, c.center.z, c.radius, 0xff4466);
     for (const [id, n] of Object.entries(this.npcs)) {
       const hi = this.sel?.kind === 'npc' && this.sel.npcId === id;
@@ -605,6 +742,17 @@ export class ZoneEditor {
 
   private groundY(x: number, z: number): number {
     return terrainHeight(x, z, WORLD_SEED) + 0.08;
+  }
+
+  private addFenceSegment(f: { x1: number; z1: number; x2: number; z2: number }, color: number): void {
+    const y1 = this.groundY(f.x1, f.z1);
+    const y2 = this.groundY(f.x2, f.z2);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute([f.x1, y1, f.z1, f.x2, y2, f.z2], 3));
+    const mat = new THREE.LineBasicMaterial({ color });
+    this.group.add(new THREE.Line(geo, mat));
+    this.addCircle(f.x1, f.z1, 0.55, color);
+    this.addCircle(f.x2, f.z2, 0.55, color);
   }
 
   private addBuildingFootprint(b: BuildingDef, color: number): void {
@@ -668,7 +816,12 @@ export class ZoneEditor {
     const status = this.panel.querySelector('.ze-status') as HTMLDivElement;
     const selEl = this.panel.querySelector('.ze-sel') as HTMLDivElement;
     const mode = this.panel.querySelector('.ze-mode') as HTMLDivElement;
-    status.textContent = this.active ? 'Active — F8 to hide' : 'Press F8 to toggle';
+    const saveBtn = this.panel.querySelector('.ze-save') as HTMLButtonElement;
+    const src = ZONE_EDITOR_SOURCES[this.zoneId];
+    saveBtn.textContent = `Save to ${src.file}`;
+    status.textContent = this.active
+      ? `Active — ${src.name} — F8 to hide`
+      : 'Press F8 to toggle';
     mode.style.color = this.placeMode ? '#6f6' : '#8ac';
     mode.textContent = this.placeMode
       ? 'Place mode ON — click ground to add · P to exit'
@@ -695,6 +848,12 @@ export class ZoneEditor {
       const c = this.camps[s.index];
       return c ? `camp[${s.index}] ${c.mobId} @ (${c.center.x.toFixed(1)}, ${c.center.z.toFixed(1)}) r=${c.radius}` : '';
     }
+    if (s.kind === 'fence') {
+      const f = this.props.fences[s.index];
+      return f
+        ? `fence[${s.index}] (${f.x1.toFixed(1)}, ${f.z1.toFixed(1)}) → (${f.x2.toFixed(1)}, ${f.z2.toFixed(1)})`
+        : '';
+    }
     if (s.kind === 'placedAsset') {
       const a = this.props.placedAssets[s.index];
       const label = getPropLibraryEntry(a?.model ?? '')?.label ?? a?.model;
@@ -704,15 +863,16 @@ export class ZoneEditor {
   }
 
   exportJson(): ZoneEditorExport {
-    return buildZoneEditorExport(this.props, this.npcs, this.camps);
+    return buildZoneEditorExport(this.zoneId, this.props, this.npcs, this.camps);
   }
 
   private async copyJson(): Promise<void> {
     const json = JSON.stringify(this.exportJson(), null, 2);
+    const exportFile = ZONE_EDITOR_SOURCES[this.zoneId].exportFile;
     try {
       await navigator.clipboard.writeText(json);
       const status = this.panel.querySelector('.ze-status') as HTMLDivElement;
-      status.textContent = 'JSON copied — save to editor/exports/eastbrook_vale.json';
+      status.textContent = `JSON copied — save to editor/exports/${exportFile}`;
       window.setTimeout(() => this.refreshPanel(), 3000);
     } catch {
       console.log('Zone editor export:\n', json);
@@ -725,7 +885,7 @@ export class ZoneEditor {
     const blob = new Blob([json], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'eastbrook_vale.json';
+    a.download = ZONE_EDITOR_SOURCES[this.zoneId].exportFile;
     a.click();
     URL.revokeObjectURL(a.href);
     const status = this.panel.querySelector('.ze-status') as HTMLDivElement;
@@ -748,7 +908,7 @@ export class ZoneEditor {
       });
       const data = await res.json() as { ok?: boolean; error?: string; zonePath?: string };
       if (!res.ok || !data.ok) throw new Error(data.error ?? `Save failed (${res.status})`);
-      status.textContent = 'Saved to zone1.ts — reload page (F5); restart server for collision';
+      status.textContent = `Saved to ${ZONE_EDITOR_SOURCES[this.zoneId].file} — reload page (F5); restart server for collision`;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       status.textContent = `Save failed: ${msg}`;

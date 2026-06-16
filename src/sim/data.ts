@@ -77,6 +77,7 @@ function mergeProps(sets: ZonePropsDef[]): ZonePropsDef {
     fences: sets.flatMap((s) => s.fences),
     graveyards: sets.flatMap((s) => s.graveyards),
     placedAssets: sets.flatMap((s) => s.placedAssets ?? []),
+    authoredTrees: sets.flatMap((s) => s.authoredTrees ?? []),
   };
 }
 
@@ -104,15 +105,35 @@ export const GROUP_XP_BONUS = [1, 1, 1.166, 1.3, 1.43];
 // ---------------------------------------------------------------------------
 // Zones. The world is a north-running strip of zone bands: x in
 // [-WORLD_SIZE/2, WORLD_SIZE/2], z from WORLD_MIN_Z through the last zone's
-// zMax. Each zone owns a hub settlement (terrain flattens there), a
-// graveyard, its lakes, and a biome palette the renderer keys off.
+// zMax. Aldermere sits in an eastern protrusion past x=+180 (see below).
 // ---------------------------------------------------------------------------
 
 export const ZONES: ZoneDef[] = [ZONE1_ZONE, ZONE2_ZONE, ZONE3_ZONE];
 
-export const WORLD_SIZE = 360; // world width: x spans [-180, 180]
+export const WORLD_SIZE = 360; // main strip width: x spans [-180, 180]
 export const WORLD_MIN_X = -WORLD_SIZE / 2;
 export const WORLD_MAX_X = WORLD_SIZE / 2;
+
+/** Aldermere — localized eastward bulge past the Ironspine Pass gap (~5× city footprint). */
+export const EAST_PROTRUSION = {
+  xMin: 148,
+  xMax: 502,
+  zMin: 308,
+  zMax: 592,
+  passZ: 432,
+  passHalfZ: 24,
+};
+
+export function isInEastProtrusion(x: number, z: number): boolean {
+  return x >= EAST_PROTRUSION.xMin && x <= EAST_PROTRUSION.xMax
+    && z >= EAST_PROTRUSION.zMin && z <= EAST_PROTRUSION.zMax;
+}
+
+/** True for the main overworld strip plus the Aldermere protrusion pocket. */
+export function inOverworldBounds(x: number, z: number): boolean {
+  return (x > WORLD_MIN_X && x < WORLD_MAX_X && z > WORLD_MIN_Z && z < WORLD_MAX_Z)
+    || isInEastProtrusion(x, z);
+}
 export const WORLD_MIN_Z = ZONES[0].zMin;
 export const WORLD_MAX_Z = ZONES[ZONES.length - 1].zMax;
 

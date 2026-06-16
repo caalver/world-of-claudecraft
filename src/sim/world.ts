@@ -1,7 +1,7 @@
 import { fbm2, hash2 } from './rng';
 import {
-  CAMPS, DUNGEON_FLOOR_Y, DUNGEON_X_THRESHOLD, ROADS, WORLD_MAX_X, WORLD_MAX_Z,
-  WORLD_MIN_X, WORLD_MIN_Z, ZONES,
+  CAMPS, DUNGEON_FLOOR_Y, DUNGEON_X_THRESHOLD, EAST_PROTRUSION, ROADS, WORLD_MAX_X, WORLD_MAX_Z,
+  WORLD_MIN_X, WORLD_MIN_Z, ZONES, inOverworldBounds, isInEastProtrusion,
 } from './data';
 import type { BiomeId } from './types';
 
@@ -35,6 +35,13 @@ const RIDGE_SIGMA = 18; // gaussian width of the wall
 const PASS_HALF_WIDTH = 10; // flat opening around the road
 const PASS_SHOULDER = 34; // ...rising to full wall by this far from the pass
 
+// Ironspine escarpment at the eastern map edge, opened by Aldermere Pass (z ~432).
+const EAST_BARRIER_X = 168;
+const EAST_PASS_Z = EAST_PROTRUSION.passZ;
+const EAST_PASS_HALF_Z = EAST_PROTRUSION.passHalfZ;
+const EAST_PASS_SHOULDER_Z = 38;
+const EAST_BARRIER_HEIGHT = 20;
+
 function smoothstep(edge0: number, edge1: number, x: number): number {
   const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
   return t * t * (3 - 2 * t);
@@ -59,17 +66,25 @@ function shapeAt(z: number): { hill: number; base: number } {
   return { hill, base };
 }
 
+function zoneHubs(zone: (typeof ZONES)[number]): { x: number; z: number; radius: number }[] {
+  const out = [zone.hub];
+  if (zone.settlements) out.push(...zone.settlements);
+  return out;
+}
+
 function baseHeight(x: number, z: number, seed: number): number {
   const shape = shapeAt(z);
   let h = (fbm2(x * HILL_SCALE + 100, z * HILL_SCALE + 100, seed, 4) - 0.5) * shape.hill + shape.base;
   h += (fbm2(x * DETAIL_SCALE, z * DETAIL_SCALE, seed + 7, 2) - 0.5) * 2.2;
-  // Flatten each zone's hub settlement into a plateau
+  // Flatten each zone hub / satellite settlement into a plateau
   for (const zone of ZONES) {
-    const dx = x - zone.hub.x, dz = z - zone.hub.z;
-    const dHub = Math.sqrt(dx * dx + dz * dz);
-    if (dHub < zone.hub.radius * 1.6) {
-      const blend = smoothstep(zone.hub.radius * 0.7, zone.hub.radius * 1.6, dHub);
-      h = h * blend + BIOME_SHAPE[zone.biome].hubHeight * (1 - blend);
+    for (const hub of zoneHubs(zone)) {
+      const dx = x - hub.x, dz = z - hub.z;
+      const dHub = Math.sqrt(dx * dx + dz * dz);
+      if (dHub < hub.radius * 1.6) {
+        const blend = smoothstep(hub.radius * 0.7, hub.radius * 1.6, dHub);
+        h = h * blend + BIOME_SHAPE[zone.biome].hubHeight * (1 - blend);
+      }
     }
   }
   // Keep dry land everywhere: soft-floor low dips above the water level...
@@ -120,11 +135,45 @@ export function terrainHeight(x: number, z: number, seed: number): number {
     }
   }
 
-  // Raise the world rim so the player naturally stays in bounds
-  const rimX = smoothstep(WORLD_MAX_X - 30, WORLD_MAX_X, Math.abs(x));
+  // Ironspine escarpment at the eastern map edge, opened by Aldermere Pass
+  {
+    const dx = Math.abs(x - EAST_BARRIER_X);
+    if (dx < 42) {
+      const profile = Math.exp(-(dx * dx) / (2 * 16 * 16));
+      const pass = smoothstep(EAST_PASS_HALF_Z, EAST_PASS_SHOULDER_Z, Math.abs(z - EAST_PASS_Z));
+      const crest = 1 + (fbm2(x * 0.03, EAST_PASS_Z * 0.03, seed + 29, 2) - 0.5) * 0.65;
+      h += EAST_BARRIER_HEIGHT * crest * profile * pass;
+    }
+  }
+
+  // World rim: main strip edges + Aldermere protrusion envelope
+  const westRim = smoothstep(WORLD_MIN_X + 30, WORLD_MIN_X, x);
+  let mainEastRim = 0;
+  if (!isInEastProtrusion(x, z)) {
+    mainEastRim = smoothstep(WORLD_MAX_X - 30, WORLD_MAX_X, x);
+    const pass = smoothstep(EAST_PASS_HALF_Z, EAST_PASS_SHOULDER_Z, Math.abs(z - EAST_PASS_Z));
+    mainEastRim *= pass;
+  }
+  let protrusionRim = 0;
+  if (isInEastProtrusion(x, z)) {
+    const p = EAST_PROTRUSION;
+    protrusionRim = Math.max(
+      smoothstep(p.xMax - 28, p.xMax, x),
+      smoothstep(p.zMin + 22, p.zMin, z),
+      smoothstep(p.zMax - 22, p.zMax, z),
+    );
+    if (x < p.xMin + 18) {
+      let west = smoothstep(p.xMin + 18, p.xMin, x);
+      west *= smoothstep(EAST_PASS_HALF_Z, EAST_PASS_HALF_Z + 28, Math.abs(z - EAST_PASS_Z));
+      protrusionRim = Math.max(protrusionRim, west);
+    }
+  } else if (x > WORLD_MAX_X) {
+    // Outside the pocket but past the main edge — sheer void
+    mainEastRim = 1;
+  }
   const rimS = smoothstep(WORLD_MIN_Z + 30, WORLD_MIN_Z, z);
   const rimN = smoothstep(WORLD_MAX_Z - 30, WORLD_MAX_Z, z);
-  const rim = Math.max(rimX, rimS, rimN);
+  const rim = Math.max(westRim, mainEastRim, protrusionRim, rimS, rimN);
   h += rim * 40;
   return h;
 }
@@ -171,47 +220,53 @@ export function generateDecorations(seed: number): Decoration[] {
   const out: Decoration[] = [];
   const step = 10;
   const xHalf = WORLD_MAX_X - 14;
-  for (let gx = -xHalf; gx < xHalf; gx += step) {
-    for (let gz = WORLD_MIN_Z + 14; gz < WORLD_MAX_Z - 14; gz += step) {
-      const r = hash2(Math.round(gx), Math.round(gz), seed + 31);
-      const biome = zoneBiomeAt(gz);
-      // density gate + kind mix per biome
-      let kind: Decoration['kind'] | null = null;
-      if (biome === 'vale') {
-        if (r > 0.48) continue;
-        kind = r < 0.30 ? 'tree' : r < 0.40 ? 'tree2' : 'rock';
-      } else if (biome === 'marsh') {
-        if (r > 0.34) continue;
-        kind = r < 0.08 ? 'tree' : r < 0.26 ? 'tree2' : 'rock';
-      } else {
-        if (r > 0.44) continue;
-        kind = r < 0.20 ? 'tree' : r < 0.24 ? 'tree2' : 'rock';
-      }
-      const ox = (hash2(Math.round(gx), Math.round(gz), seed + 57) - 0.5) * step;
-      const oz = (hash2(Math.round(gx), Math.round(gz), seed + 91) - 0.5) * step;
-      const x = gx + ox, z = gz + oz;
-      let inHub = false;
-      for (const zone of ZONES) {
-        const dx = x - zone.hub.x, dz = z - zone.hub.z;
-        if (Math.sqrt(dx * dx + dz * dz) < zone.hub.radius + 4) { inHub = true; break; }
-      }
-      if (inHub) continue;
-      if (terrainHeight(x, z, seed) < WATER_LEVEL + 1) continue;
-      if (roadDistance(x, z) < 5) continue;
-      let inCamp = false;
-      for (const c of CAMPS) {
-        const dx = x - c.center.x, dz = z - c.center.z;
-        if (Math.sqrt(dx * dx + dz * dz) < c.radius + 3) { inCamp = true; break; }
-      }
-      if (inCamp) continue;
-      out.push({
-        kind,
-        x, z,
-        scale: 0.7 + hash2(Math.round(gx), Math.round(gz), seed + 13) * 0.9,
-        variant: Math.floor(hash2(Math.round(gx), Math.round(gz), seed + 77) * 3),
-        biome,
-      });
+  const sampleCell = (gx: number, gz: number): void => {
+    const r = hash2(Math.round(gx), Math.round(gz), seed + 31);
+    const biome = zoneBiomeAt(gz);
+    let kind: Decoration['kind'] | null = null;
+    if (biome === 'vale') {
+      if (r > 0.48) return;
+      kind = r < 0.30 ? 'tree' : r < 0.40 ? 'tree2' : 'rock';
+    } else if (biome === 'marsh') {
+      if (r > 0.34) return;
+      kind = r < 0.08 ? 'tree' : r < 0.26 ? 'tree2' : 'rock';
+    } else {
+      if (r > 0.44) return;
+      kind = r < 0.20 ? 'tree' : r < 0.24 ? 'tree2' : 'rock';
     }
+    const ox = (hash2(Math.round(gx), Math.round(gz), seed + 57) - 0.5) * step;
+    const oz = (hash2(Math.round(gx), Math.round(gz), seed + 91) - 0.5) * step;
+    const x = gx + ox, z = gz + oz;
+    if (!inOverworldBounds(x, z)) return;
+    let inHub = false;
+    for (const zone of ZONES) {
+      for (const hub of zoneHubs(zone)) {
+        const dx = x - hub.x, dz = z - hub.z;
+        if (Math.sqrt(dx * dx + dz * dz) < hub.radius + 4) { inHub = true; break; }
+      }
+      if (inHub) break;
+    }
+    if (inHub) return;
+    if (terrainHeight(x, z, seed) < WATER_LEVEL + 1) return;
+    if (roadDistance(x, z) < 5) return;
+    for (const c of CAMPS) {
+      const dx = x - c.center.x, dz = z - c.center.z;
+      if (Math.sqrt(dx * dx + dz * dz) < c.radius + 3) return;
+    }
+    out.push({
+      kind,
+      x, z,
+      scale: 0.7 + hash2(Math.round(gx), Math.round(gz), seed + 13) * 0.9,
+      variant: Math.floor(hash2(Math.round(gx), Math.round(gz), seed + 77) * 3),
+      biome,
+    });
+  };
+  for (let gx = -xHalf; gx < xHalf; gx += step) {
+    for (let gz = WORLD_MIN_Z + 14; gz < WORLD_MAX_Z - 14; gz += step) sampleCell(gx, gz);
+  }
+  const p = EAST_PROTRUSION;
+  for (let gx = p.xMin; gx < p.xMax; gx += step) {
+    for (let gz = p.zMin; gz < p.zMax; gz += step) sampleCell(gx, gz);
   }
   return out;
 }

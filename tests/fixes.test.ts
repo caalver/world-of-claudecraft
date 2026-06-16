@@ -97,11 +97,22 @@ describe('collision & terrain', () => {
   it('steep rims are walls, not ramps', () => {
     const sim = makeSim();
     const p = sim.player;
-    teleportTo(sim, 150, 0);
-    p.facing = Math.PI / 2; // +x, toward the world rim
+    teleportTo(sim, -150, 0);
+    p.facing = -Math.PI / 2; // -x, toward the western rim
     sim.moveInput.forward = true;
     for (let i = 0; i < 400; i++) sim.tick();
+    expect(p.pos.x).toBeGreaterThan(-170);
+
+    teleportTo(sim, 150, 0);
+    p.facing = Math.PI / 2; // +x, toward the eastern rim (no pass at this latitude)
+    for (let i = 0; i < 400; i++) sim.tick();
     expect(p.pos.x).toBeLessThan(170);
+
+    teleportTo(sim, 150, 432);
+    p.facing = Math.PI / 2; // through Ironspine Pass into Aldermere
+    for (let i = 0; i < 400; i++) sim.tick();
+    expect(p.pos.x).toBeGreaterThan(250);
+    expect(p.pos.x).toBeLessThan(360);
   });
 
   it('NPCs spawn on dry land outside buildings', () => {

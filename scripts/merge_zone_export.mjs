@@ -15,9 +15,26 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-/** @type {Record<string, { file: string; exportName: string }>} */
+/** @type {Record<string, { file: string; exportName: string; propsMarker: string; campsMarker: string }>} */
 export const ZONE_TARGETS = {
-  eastbrook_vale: { file: 'src/sim/content/zone1.ts', exportName: 'eastbrook_vale.json' },
+  eastbrook_vale: {
+    file: 'src/sim/content/zone1.ts',
+    exportName: 'eastbrook_vale.json',
+    propsMarker: 'ZONE1_PROPS',
+    campsMarker: 'ZONE1_CAMPS',
+  },
+  mirefen_marsh: {
+    file: 'src/sim/content/zone2.ts',
+    exportName: 'mirefen_marsh.json',
+    propsMarker: 'ZONE2_PROPS',
+    campsMarker: 'ZONE2_CAMPS',
+  },
+  thornpeak_heights: {
+    file: 'src/sim/content/zone3.ts',
+    exportName: 'thornpeak_heights.json',
+    propsMarker: 'ZONE3_PROPS',
+    campsMarker: 'ZONE3_CAMPS',
+  },
 };
 
 export function fmtNum(n) {
@@ -117,9 +134,9 @@ function formatPlacedAsset(a) {
 }
 
 /** @param {import('../src/sim/types').ZonePropsDef} props */
-export function formatZone1Props(props, stallComments = []) {
+export function formatZoneProps(props, stallComments = [], propsExport = 'ZONE1_PROPS') {
   const lines = [
-    'export const ZONE1_PROPS: ZonePropsDef = {',
+    `export const ${propsExport}: ZonePropsDef = {`,
     '  buildings: [',
     ...props.buildings.map((b) => `${formatBuilding(b)},`),
     '  ],',
@@ -146,24 +163,42 @@ export function formatZone1Props(props, stallComments = []) {
     '  placedAssets: [',
     ...(props.placedAssets ?? []).map((a) => `${formatPlacedAsset(a)},`),
     '  ],',
+    formatAuthoredTrees(props.authoredTrees),
     '};',
   ];
   return lines.join('\n');
 }
 
+function formatAuthoredTrees(trees) {
+  if (!trees?.length) return '  authoredTrees: [],';
+  const rows = trees.map((t) => {
+    const parts = [`x: ${fmtNum(t.x)}`, `z: ${fmtNum(t.z)}`];
+    if (t.kind) parts.push(`kind: '${t.kind}'`);
+    if (t.scale != null) parts.push(`scale: ${fmtNum(t.scale)}`);
+    return `    { ${parts.join(', ')} },`;
+  });
+  return ['  authoredTrees: [', ...rows, '  ],'].join('\n');
+}
+
+/** Back-compat alias */
+export const formatZone1Props = formatZoneProps;
+
 /** @param {import('../src/sim/types').CampDef[]} camps */
-export function formatZone1Camps(camps) {
+export function formatZoneCamps(camps, campsExport = 'ZONE1_CAMPS') {
   const lines = [
-    'export const ZONE1_CAMPS: CampDef[] = [',
+    `export const ${campsExport}: CampDef[] = [`,
     ...camps.map((c) => `  { mobId: '${c.mobId}', center: { x: ${fmtNum(c.center.x)}, z: ${fmtNum(c.center.z)} }, radius: ${fmtNum(c.radius)}, count: ${c.count} },`),
     '];',
   ];
   return lines.join('\n');
 }
 
-export function extractStallComments(zoneContent) {
+/** Back-compat alias */
+export const formatZone1Camps = formatZoneCamps;
+
+export function extractStallComments(zoneContent, propsMarker = 'ZONE1_PROPS') {
   const comments = [];
-  const m = zoneContent.match(/export const ZONE1_PROPS[\s\S]*?stalls: \[([\s\S]*?)\],/);
+  const m = zoneContent.match(new RegExp(`export const ${propsMarker}[\\s\\S]*?stalls: \\[([\\s\\S]*?)\\],`));
   if (!m) return comments;
   for (const line of m[1].split('\n')) {
     const cm = line.match(/\/\/.*$/);
@@ -215,15 +250,11 @@ export function mergeZoneExport(exportPath, zoneFilePath) {
     ? (path.isAbsolute(zoneFilePath) ? zoneFilePath : path.join(ROOT, zoneFilePath))
     : path.join(ROOT, target.file);
   let content = fs.readFileSync(zonePath, 'utf8');
-  const stallComments = extractStallComments(content);
+  const stallComments = extractStallComments(content, target.propsMarker);
 
-  if (data.zone === 'eastbrook_vale') {
-    content = replaceMarkedBlock(content, 'ZONE1_CAMPS', formatZone1Camps(data.camps));
-    content = replaceMarkedBlock(content, 'ZONE1_PROPS', formatZone1Props(data.props, stallComments));
-    content = patchNpcPositions(content, data.npcs);
-  } else {
-    throw new Error(`Merge not implemented for zone: ${data.zone}`);
-  }
+  content = replaceMarkedBlock(content, target.campsMarker, formatZoneCamps(data.camps, target.campsMarker));
+  content = replaceMarkedBlock(content, target.propsMarker, formatZoneProps(data.props, stallComments, target.propsMarker));
+  content = patchNpcPositions(content, data.npcs);
 
   fs.writeFileSync(zonePath, content, 'utf8');
   return { zonePath, zone: data.zone };

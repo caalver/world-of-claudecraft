@@ -2,13 +2,12 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import {
-  CAMPS, DUNGEON_X_THRESHOLD, WORLD_MAX_X, WORLD_MAX_Z, WORLD_MIN_Z, ZONES,
+  CAMPS, DUNGEON_X_THRESHOLD, EAST_PROTRUSION, WORLD_MAX_X, WORLD_MAX_Z, WORLD_MIN_Z, ZONES,
 } from '../sim/data';
 import type { BiomeId } from '../sim/types';
-import {
-  generateDecorations, roadDistance, terrainHeight, zoneBiomeAt, WATER_LEVEL,
-} from '../sim/world';
+import { generateDecorations, roadDistance, terrainHeight, zoneBiomeAt, WATER_LEVEL } from '../sim/world';
 import type { Decoration } from '../sim/world';
+import { PROPS } from '../sim/data';
 import { GFX, sharedUniforms } from './gfx';
 import { grassTuftTexture } from './textures';
 import { loadGltf } from './assets/loader';
@@ -425,7 +424,17 @@ function placeSpecies(
 }
 
 function buildTrees(parent: THREE.Group, seed: number, registry: BucketMesh[]): void {
-  const decos = generateDecorations(seed);
+  const decos: Decoration[] = [...generateDecorations(seed)];
+  for (const t of PROPS.authoredTrees ?? []) {
+    decos.push({
+      kind: t.kind ?? 'tree2',
+      x: t.x,
+      z: t.z,
+      scale: t.scale ?? 1.1,
+      variant: Math.abs(Math.round(t.x * 3.7 + t.z * 2.1)) % 3,
+      biome: zoneBiomeAt(t.z),
+    });
+  }
   const buckets = new Map<string, Bucket>();
   for (const d of decos) {
     const col = d.x < 0 ? 0 : 1;

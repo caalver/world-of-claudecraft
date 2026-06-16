@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {
-  WORLD_MAX_X, WORLD_MAX_Z, WORLD_MIN_Z, ZONES,
+  EAST_PROTRUSION, WORLD_MAX_X, WORLD_MAX_Z, WORLD_MIN_X, WORLD_MIN_Z, ZONES, isInEastProtrusion,
 } from '../sim/data';
 import type { BiomeId } from '../sim/types';
 import { roadDistance, terrainHeight, WATER_LEVEL, zoneBiomeAt } from '../sim/world';
@@ -233,11 +233,15 @@ function sampleVertex(x: number, z: number, seed: number): VertexSample {
     lerpSplat(w, 2, clamp01((h - 22) / 10) * 0.8);
   }
   // the rim wall reads as distant sunlit peaks, not a black cliff
-  const edge = Math.max(
+  let edge = Math.max(
     Math.abs(x) - (WORLD_MAX_X - 32),
     WORLD_MIN_Z + 32 - z,
     z - (WORLD_MAX_Z - 32),
   );
+  if (isInEastProtrusion(x, z)) {
+    const p = EAST_PROTRUSION;
+    edge = Math.max(edge, x - (p.xMax - 28), p.zMin + 22 - z, z - (p.zMax - 22));
+  }
   const rim = clamp01(edge / 26);
   if (rim > 0) {
     cTmp.lerp(hazyPeakC, rim * 0.9);
@@ -537,12 +541,20 @@ export function buildTerrain(seed: number): TerrainView {
   const chunksZ = Math.ceil(worldDepth / CHUNK_SIZE);
   const chunks: { mesh: THREE.Mesh; x: number; z: number; radius: number }[] = [];
 
+  const chunkIntersectsProtrusion = (x0: number, z0: number, size: number): boolean => {
+    const p = EAST_PROTRUSION;
+    return x0 + size >= p.xMin && x0 <= p.xMax && z0 + size >= p.zMin && z0 <= p.zMax;
+  };
+
   const bandIndexAt = (cx: number, cz: number): number => {
     const centerX = -WORLD_MAX_X + cx * CHUNK_SIZE + CHUNK_SIZE / 2;
     const centerZ = WORLD_MIN_Z + cz * CHUNK_SIZE + CHUNK_SIZE / 2;
     let hubDist = Infinity;
     for (const zn of ZONES) {
       hubDist = Math.min(hubDist, Math.hypot(centerX - zn.hub.x, centerZ - zn.hub.z));
+      for (const s of zn.settlements ?? []) {
+        hubDist = Math.min(hubDist, Math.hypot(centerX - s.x, centerZ - s.z));
+      }
     }
     const idx = bands.findIndex((b) => hubDist <= b.maxHubDist);
     return idx === -1 ? bands.length - 1 : idx;
@@ -579,6 +591,18 @@ export function buildTerrain(seed: number): TerrainView {
         const band = bands[bandIndexAt(cx, cz)];
         addChunk(-WORLD_MAX_X + cx * CHUNK_SIZE, WORLD_MIN_Z + cz * CHUNK_SIZE, CHUNK_SIZE, band.spacing);
       }
+    }
+  }
+
+  // Aldermere protrusion — extra chunks east of the main strip (localized pocket only)
+  const protChunksX = Math.ceil((EAST_PROTRUSION.xMax - WORLD_MAX_X) / CHUNK_SIZE);
+  for (let cz = 0; cz < chunksZ; cz++) {
+    for (let px = 0; px < protChunksX; px++) {
+      const x0 = WORLD_MAX_X + px * CHUNK_SIZE;
+      const z0 = WORLD_MIN_Z + cz * CHUNK_SIZE;
+      if (!chunkIntersectsProtrusion(x0, z0, CHUNK_SIZE)) continue;
+      const band = bands[0];
+      addChunk(x0, z0, CHUNK_SIZE, band.spacing);
     }
   }
   return {

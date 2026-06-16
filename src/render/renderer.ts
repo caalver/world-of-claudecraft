@@ -11,6 +11,10 @@ import type { BiomeId } from '../sim/types';
 import { AnimState, CharacterVisual, createCharacterVisual } from './characters';
 import { LocoTrack, newLocoTrack, updateLocomotion } from './locomotion';
 import { buildProps } from './props';
+import { ZONE1_PROPS } from '../sim/content/zone1';
+import { ZONE2_PROPS } from '../sim/content/zone2';
+import { ZONE3_PROPS } from '../sim/content/zone3';
+import type { EditorZoneId } from '../dev/zone_editor_zones';
 import { plankTexture, sparkleTexture } from './textures';
 import { DungeonInteriors } from './dungeon';
 import { Vfx } from './vfx';
@@ -144,6 +148,7 @@ export class Renderer {
   };
   private insideBuilding = false;
   private worldPropsGroup!: THREE.Group;
+  private worldPropsByZone = new Map<EditorZoneId, THREE.Group>();
   private lightRank: { light: THREE.PointLight; d2: number; worldPos: THREE.Vector3 }[] = [];
   private doomedIds: number[] = [];
   private dungeons: DungeonInteriors | null = null;
@@ -319,12 +324,30 @@ export class Renderer {
 
     this.foliage = buildFoliage(this.sim.cfg.seed);
     this.scene.add(this.foliage.group);
-    const props = buildProps(this.sim.cfg.seed);
-    this.worldPropsGroup = props.group;
-    this.scene.add(props.group);
-    this.flames = props.flames;
-    this.fireLights = props.fireLights;
-    this.propsView = props;
+    const zonePropSets: { id: EditorZoneId; props: typeof ZONE1_PROPS }[] = [
+      { id: 'eastbrook_vale', props: ZONE1_PROPS },
+      { id: 'mirefen_marsh', props: ZONE2_PROPS },
+      { id: 'thornpeak_heights', props: ZONE3_PROPS },
+    ];
+    const propsViews: ReturnType<typeof buildProps>[] = [];
+    this.worldPropsGroup = new THREE.Group();
+    this.worldPropsGroup.name = 'world-props';
+    for (const z of zonePropSets) {
+      const built = buildProps(this.sim.cfg.seed, z.props);
+      built.group.name = `world-props-${z.id}`;
+      this.worldPropsGroup.add(built.group);
+      this.worldPropsByZone.set(z.id, built.group);
+      propsViews.push(built);
+    }
+    this.scene.add(this.worldPropsGroup);
+    this.flames = propsViews.flatMap((p) => p.flames);
+    this.fireLights = propsViews.flatMap((p) => p.fireLights);
+    this.propsView = {
+      update: (camX, camZ, fogFar) => {
+        for (const v of propsViews) v.update(camX, camZ, fogFar);
+      },
+      updatePlayer: (px, pz) => propsViews.some((v) => v.updatePlayer?.(px, pz) ?? false),
+    };
 
     // selection ring
     const ringGeo = new THREE.RingGeometry(0.9, 1.15, 32);
@@ -363,9 +386,15 @@ export class Renderer {
     document.addEventListener('fullscreenchange', resize);
   }
 
-  /** Dev zone editor: hide baked world props while showing an editor preview layer. */
+  /** Dev zone editor: show/hide all baked world props. */
   setWorldPropsVisible(visible: boolean): void {
     if (this.worldPropsGroup) this.worldPropsGroup.visible = visible;
+  }
+
+  /** Dev zone editor: hide one zone's baked props while editing that zone in-place. */
+  setZonePropsVisible(zoneId: EditorZoneId, visible: boolean): void {
+    const group = this.worldPropsByZone.get(zoneId);
+    if (group) group.visible = visible;
   }
 
   private measureViewport(): { width: number; height: number } {

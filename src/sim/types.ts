@@ -304,6 +304,8 @@ export interface ZoneDef {
   levelRange: [number, number];
   biome: BiomeId;
   hub: { x: number; z: number; radius: number; name: string };
+  /** Additional flattened town sites (hub-sized plateaus) in this zone. */
+  settlements?: { x: number; z: number; radius: number; name: string }[];
   graveyard: { x: number; z: number };
   lakes: { x: number; z: number; radius: number }[];
   pois: { x: number; z: number; label: string }[];
@@ -364,6 +366,8 @@ export interface ZonePropsDef {
   fences: { x1: number; z1: number; x2: number; z2: number }[];
   graveyards: { x: number; z: number }[]; // 6-headstone cluster anchor
   placedAssets: PlacedAssetDef[];
+  /** Fixed tree placements (boulevards, parks) — merged into foliage at build time. */
+  authoredTrees?: { x: number; z: number; kind?: 'tree' | 'tree2'; scale?: number }[];
 }
 
 export function emptyZoneProps(): ZonePropsDef {
@@ -371,6 +375,7 @@ export function emptyZoneProps(): ZonePropsDef {
     buildings: [], wells: [], stalls: [], mines: [], docks: [], tents: [],
     crates: [], campfires: [], mudHuts: [], ruinRings: [], fences: [], graveyards: [],
     placedAssets: [],
+    authoredTrees: [],
   };
 }
 

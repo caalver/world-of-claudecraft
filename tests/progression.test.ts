@@ -7,6 +7,7 @@ import {
   CAMPS, CLASSES, ABILITIES, DUNGEON_LIST, GROUND_OBJECTS, ITEMS, MOBS, NPCS,
   QUESTS, QUEST_ORDER, REWARD_ARCHETYPE, ROADS, ZONES,
   WORLD_MAX_X, WORLD_MAX_Z, WORLD_MIN_X, WORLD_MIN_Z,
+  inOverworldBounds,
 } from '../src/sim/data';
 import { ALL_CLASSES, XP_TABLE, MAX_LEVEL, ZoneDef } from '../src/sim/types';
 import { terrainHeight, WATER_LEVEL } from '../src/sim/world';
@@ -100,8 +101,7 @@ describe('content referential integrity', () => {
       expect(ZONES[i].zMax).toBe(ZONES[i + 1].zMin);
     }
     const problems: string[] = [];
-    const inWorld = (x: number, z: number) =>
-      x > WORLD_MIN_X && x < WORLD_MAX_X && z > WORLD_MIN_Z && z < WORLD_MAX_Z;
+    const inWorld = inOverworldBounds;
     for (const zone of ZONES) {
       expect(zone.hub.z).toBeGreaterThanOrEqual(zone.zMin);
       expect(zone.hub.z).toBeLessThan(zone.zMax);

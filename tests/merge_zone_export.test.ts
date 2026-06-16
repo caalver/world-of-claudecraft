@@ -10,6 +10,7 @@ import {
   patchNpcPositions,
 } from '../scripts/merge_zone_export.mjs';
 import { ZONE1_CAMPS, ZONE1_NPCS, ZONE1_PROPS } from '../src/sim/content/zone1';
+import { ZONE2_CAMPS, ZONE2_NPCS, ZONE2_PROPS } from '../src/sim/content/zone2';
 import { buildZoneEditorExport } from '../src/dev/zone_editor';
 
 describe('merge_zone_export', () => {
@@ -69,7 +70,7 @@ describe('merge_zone_export', () => {
   });
 
   it('round-trips zone1 through export → merge without losing markers', () => {
-    const fixture = buildZoneEditorExport(ZONE1_PROPS, ZONE1_NPCS, ZONE1_CAMPS);
+    const fixture = buildZoneEditorExport('eastbrook_vale', ZONE1_PROPS, ZONE1_NPCS, ZONE1_CAMPS);
     const zonePath = path.join(process.cwd(), 'src', 'sim', 'content', 'zone1.ts');
     const original = readFileSync(zonePath, 'utf8');
     const tmpExport = path.join(process.cwd(), 'tests', 'fixtures', 'eastbrook_roundtrip.json');
@@ -82,6 +83,23 @@ describe('merge_zone_export', () => {
     expect(merged).toContain('// @zone-editor-end ZONE1_CAMPS');
     expect(merged).toContain('marshal_redbrook');
     expect(formatZone1Camps(fixture.camps)).toContain("mobId: 'forest_wolf'");
+
+    writeFileSync(zonePath, original, 'utf8');
+  });
+
+  it('round-trips zone2 through export → merge without losing markers', () => {
+    const fixture = buildZoneEditorExport('mirefen_marsh', ZONE2_PROPS, ZONE2_NPCS, ZONE2_CAMPS);
+    const zonePath = path.join(process.cwd(), 'src', 'sim', 'content', 'zone2.ts');
+    const original = readFileSync(zonePath, 'utf8');
+    const tmpExport = path.join(process.cwd(), 'tests', 'fixtures', 'mirefen_roundtrip.json');
+    mkdirSync(path.dirname(tmpExport), { recursive: true });
+    writeFileSync(tmpExport, JSON.stringify(fixture, null, 2));
+
+    mergeZoneExport(tmpExport, zonePath);
+    const merged = readFileSync(zonePath, 'utf8');
+    expect(merged).toContain('// @zone-editor-begin ZONE2_PROPS');
+    expect(merged).toContain('// @zone-editor-end ZONE2_CAMPS');
+    expect(merged).toContain('mayor_elise');
 
     writeFileSync(zonePath, original, 'utf8');
   });

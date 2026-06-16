@@ -4,6 +4,7 @@ import { Renderer } from '../render/renderer';
 import {
   ABILITIES, CLASSES, DUNGEON_LIST, DUNGEON_X_THRESHOLD, ITEMS, MOBS, NPCS, QUESTS,
   WORLD_MAX_X, WORLD_MAX_Z, WORLD_MIN_X, WORLD_MIN_Z, ZONES, dungeonAt, questRewardItem, zoneAt,
+  EAST_PROTRUSION,
   zoneWelcomeText,
 } from '../sim/data';
 import type { ZoneDef } from '../sim/data';
@@ -91,6 +92,7 @@ export class Hud {
   private bannerTimer: number | undefined;
   private minimapCtx: CanvasRenderingContext2D;
   private minimapBg: HTMLCanvasElement;
+  private minimapRegionKey = '';
   private mapBg: HTMLCanvasElement | null = null;
   private openLootMobId: number | null = null;
   private openVendorNpcId: number | null = null;
@@ -143,7 +145,8 @@ export class Hud {
     this.drawPortrait($('#pf-portrait') as unknown as HTMLCanvasElement, CLASS_GLYPH[sim.cfg.playerClass], CLASSES[sim.cfg.playerClass].color);
     const mm = $('#minimap') as unknown as HTMLCanvasElement;
     this.minimapCtx = mm.getContext('2d')!;
-    this.minimapBg = this.renderTerrainCanvas(140, { minX: WORLD_MIN_X, maxX: WORLD_MAX_X, minZ: WORLD_MIN_Z, maxZ: WORLD_MAX_Z });
+    this.minimapBg = document.createElement('canvas');
+    this.ensureMinimapBg(this.zoneMapRegion(zoneAt(sim.player.pos.z)));
     $('#release-btn').addEventListener('click', () => { this.sim.releaseSpirit(); });
     // classic WoW: the player interaction menu opens from the target portrait
     $('#target-frame').addEventListener('contextmenu', (ev) => {
@@ -852,6 +855,24 @@ export class Hud {
   // Minimap & world map
   // -------------------------------------------------------------------------
 
+  /** Map canvas bounds for a zone band; extends +X for eastern protrusions (Aldermere). */
+  private zoneMapRegion(zone: ZoneDef): { minX: number; maxX: number; minZ: number; maxZ: number } {
+    let mapMaxX = WORLD_MAX_X;
+    if (zone.settlements?.some((s) => s.x > WORLD_MAX_X)) mapMaxX = EAST_PROTRUSION.xMax;
+    return { minX: WORLD_MIN_X, maxX: mapMaxX, minZ: zone.zMin, maxZ: zone.zMax };
+  }
+
+  private regionKey(r: { minX: number; maxX: number; minZ: number; maxZ: number }): string {
+    return `${r.minX}:${r.maxX}:${r.minZ}:${r.maxZ}`;
+  }
+
+  private ensureMinimapBg(region: { minX: number; maxX: number; minZ: number; maxZ: number }): void {
+    const key = this.regionKey(region);
+    if (key === this.minimapRegionKey) return;
+    this.minimapBg = this.renderTerrainCanvas(140, region);
+    this.minimapRegionKey = key;
+  }
+
   // Render a region of the heightfield to a canvas; width W px, height
   // derived from the region's aspect so a yard is square on screen.
   private renderTerrainCanvas(W: number, region: { minX: number; maxX: number; minZ: number; maxZ: number }): HTMLCanvasElement {
@@ -883,6 +904,10 @@ export class Hud {
         let nearHub = false;
         for (const zn of ZONES) {
           if (Math.hypot(x - zn.hub.x, z - zn.hub.z) < 14) { nearHub = true; break; }
+          for (const s of zn.settlements ?? []) {
+            if (Math.hypot(x - s.x, z - s.z) < 14) { nearHub = true; break; }
+          }
+          if (nearHub) break;
         }
         if (nearHub) { r = 125; g = 100; b = 66; }
         else if (h >= WATER_LEVEL && roadDistance(x, z) < 2.4) { r = 138; g = 111; b = 71; }
@@ -898,6 +923,9 @@ export class Hud {
     const ctx = this.minimapCtx;
     const S = 162;
     const p = this.sim.player;
+    const region = this.zoneMapRegion(zoneAt(p.pos.z));
+    this.ensureMinimapBg(region);
+    const spanX = region.maxX - region.minX;
     ctx.clearRect(0, 0, S, S);
     ctx.save();
     ctx.beginPath();
@@ -906,10 +934,10 @@ export class Hud {
     ctx.imageSmoothingEnabled = false;
     const pxPerYard = 1.7;
     const bg = this.minimapBg;
-    const bgPxPerYard = bg.width / (WORLD_MAX_X - WORLD_MIN_X);
+    const bgPxPerYard = bg.width / spanX;
     const sw = S / (pxPerYard / bgPxPerYard);
-    const sx = (WORLD_MAX_X - p.pos.x) * bgPxPerYard - sw / 2; // bg is +X-left
-    const sy = (WORLD_MAX_Z - p.pos.z) * bgPxPerYard - sw / 2;
+    const sx = (region.maxX - p.pos.x) * bgPxPerYard - sw / 2; // bg is +X-left
+    const sy = (region.maxZ - p.pos.z) * bgPxPerYard - sw / 2;
     ctx.drawImage(bg, sx, sy, sw, sw, 0, 0, S, S);
 
     for (const e of this.sim.entities.values()) {
@@ -1137,7 +1165,7 @@ export class Hud {
     const zone: ZoneDef = dungeon
       ? zoneAt(dungeon.doorPos.z)
       : ZONES.find((z) => z.id === this.lastZoneId) ?? zoneAt(p.pos.z);
-    const region = { minX: WORLD_MIN_X, maxX: WORLD_MAX_X, minZ: zone.zMin, maxZ: zone.zMax };
+    const region = this.zoneMapRegion(zone);
     if (!this.mapBg || this.mapZoneId !== zone.id) {
       this.mapBg = this.renderTerrainCanvas(280, region);
       this.mapZoneId = zone.id;
@@ -1186,6 +1214,7 @@ export class Hud {
     for (const e of this.sim.entities.values()) {
       if (e.kind !== 'npc') continue;
       if (e.pos.z < zone.zMin || e.pos.z >= zone.zMax) continue;
+      if (e.pos.x < region.minX || e.pos.x > region.maxX) continue;
       const { mx, my } = toMap(e.pos.x, e.pos.z);
       const hasAvail = e.questIds.some((q) => QUESTS[q].giverNpcId === e.templateId && this.sim.questState(q) === 'available');
       const hasReady = e.questIds.some((q) => QUESTS[q].turnInNpcId === e.templateId && this.sim.questState(q) === 'ready');
@@ -1197,7 +1226,7 @@ export class Hud {
       }
     }
     // player
-    if (p.pos.z >= zone.zMin && p.pos.z < zone.zMax && p.pos.x <= WORLD_MAX_X) {
+    if (p.pos.z >= zone.zMin && p.pos.z < zone.zMax && p.pos.x >= region.minX && p.pos.x <= region.maxX) {
       const { mx, my } = toMap(p.pos.x, p.pos.z);
       ctx.save();
       ctx.translate(mx, my);

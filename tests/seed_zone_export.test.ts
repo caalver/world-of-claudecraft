@@ -11,7 +11,7 @@ describe('seed zone export fixture', () => {
     const dir = path.join(process.cwd(), 'editor', 'exports');
     mkdirSync(dir, { recursive: true });
     const out = path.join(dir, 'eastbrook_vale.json');
-    const json = JSON.stringify(buildZoneEditorExport(ZONE1_PROPS, ZONE1_NPCS, ZONE1_CAMPS), null, 2);
+    const json = JSON.stringify(buildZoneEditorExport('eastbrook_vale', ZONE1_PROPS, ZONE1_NPCS, ZONE1_CAMPS), null, 2);
     writeFileSync(out, `${json}\n`, 'utf8');
   });
 });

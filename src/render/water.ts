@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WORLD_MAX_Z, WORLD_MIN_Z, WORLD_SIZE, ZONES } from '../sim/data';
+import { EAST_PROTRUSION, WORLD_MAX_X, WORLD_MAX_Z, WORLD_MIN_Z, WORLD_SIZE, ZONES } from '../sim/data';
 import { terrainHeight, WATER_LEVEL } from '../sim/world';
 import { loadTexture } from './assets/loader';
 import { registerPreload } from './assets/preload';
@@ -142,11 +142,10 @@ function buildShaderWater(seed: number): WaterView {
   });
 
   const meshes: THREE.Mesh[] = [];
-  for (const zone of ZONES) {
-    const depth = zone.zMax - zone.zMin;
-    const geo = new THREE.PlaneGeometry(WORLD_SIZE, depth, SEGMENTS_PER_ZONE, SEGMENTS_PER_ZONE)
+  const addWaterPlane = (width: number, depth: number, centerX: number, centerZ: number, segX: number, segZ: number): void => {
+    const geo = new THREE.PlaneGeometry(width, depth, segX, segZ)
       .rotateX(-Math.PI / 2);
-    geo.translate(0, 0, (zone.zMin + zone.zMax) / 2);
+    geo.translate(centerX, 0, centerZ);
     const pos = geo.attributes.position as THREE.BufferAttribute;
     const shoreDepth = new Float32Array(pos.count);
     for (let i = 0; i < pos.count; i++) {
@@ -158,7 +157,15 @@ function buildShaderWater(seed: number): WaterView {
     const mesh = new THREE.Mesh(geo, material);
     mesh.position.y = WATER_LEVEL;
     meshes.push(mesh);
+  };
+  for (const zone of ZONES) {
+    const depth = zone.zMax - zone.zMin;
+    addWaterPlane(WORLD_SIZE, depth, 0, (zone.zMin + zone.zMax) / 2, SEGMENTS_PER_ZONE, SEGMENTS_PER_ZONE);
   }
+  const p = EAST_PROTRUSION;
+  const protW = p.xMax - WORLD_MAX_X;
+  const protD = p.zMax - p.zMin;
+  addWaterPlane(protW, protD, (WORLD_MAX_X + p.xMax) / 2, (p.zMin + p.zMax) / 2, SEGMENTS_PER_ZONE, SEGMENTS_PER_ZONE);
   return { meshes, update: () => {} };
 }
 
@@ -175,13 +182,22 @@ function buildPhongWater(): WaterView {
     normalScale: new THREE.Vector2(0.8, 0.8),
   });
   const worldDepth = WORLD_MAX_Z - WORLD_MIN_Z;
-  const mesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(WORLD_SIZE, worldDepth).rotateX(-Math.PI / 2),
+  const meshes: THREE.Mesh[] = [
+    new THREE.Mesh(
+      new THREE.PlaneGeometry(WORLD_SIZE, worldDepth).rotateX(-Math.PI / 2),
+      mat,
+    ),
+  ];
+  meshes[0].position.set(0, WATER_LEVEL, (WORLD_MIN_Z + WORLD_MAX_Z) / 2);
+  const p = EAST_PROTRUSION;
+  const protMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(p.xMax - WORLD_MAX_X, p.zMax - p.zMin).rotateX(-Math.PI / 2),
     mat,
   );
-  mesh.position.set(0, WATER_LEVEL, (WORLD_MIN_Z + WORLD_MAX_Z) / 2);
+  protMesh.position.set((WORLD_MAX_X + p.xMax) / 2, WATER_LEVEL, (p.zMin + p.zMax) / 2);
+  meshes.push(protMesh);
   return {
-    meshes: [mesh],
+    meshes,
     update(time: number): void {
       tex.offset.x = time * 0.008;
       tex.offset.y = time * 0.011;
